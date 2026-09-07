@@ -24,6 +24,20 @@ def mark_origin() -> str:
     return title
 
 
+def delayed_focus(command: list[str]) -> bool:
+    """Finish focus after Terminal has disposed of the short-lived launcher tab."""
+    try:
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, close_fds=True,
+                                   creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_BREAKAWAY_FROM_JOB)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.AllowSetForegroundWindow.argtypes = [wintypes.DWORD]
+        user32.AllowSetForegroundWindow(process.pid)
+        return True
+    except OSError:
+        return False
+
+
 def process_alive(pid: int) -> bool:
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -100,12 +114,20 @@ def focus_existing(directory: Path, probe_only: bool = False) -> bool:
             command.extend(["-OriginTitle", mark_origin()])
         except OSError:
             return False
-    if probe_only:
-        command.append("-ProbeOnly")
+    command.append("-ProbeOnly")
     try:
-        result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL, timeout=5,
+        result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, encoding="utf-8", timeout=5,
                                 creationflags=subprocess.CREATE_NO_WINDOW)
-        return result.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
+        if result.returncode != 0:
+            return False
+        if probe_only:
+            return True
+        target = json.loads(result.stdout)
+        titles = base64.b64encode(json.dumps([target["title"]]).encode()).decode("ascii")
+        return delayed_focus([str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                              "-File", str(Path(__file__).with_name("focus_existing.ps1")), "-TitlesBase64", titles,
+                              "-WindowHandle", str(target["window"]), "-InvokeWindow", str(target["origin"]),
+                              "-AfterPid", str(os.getpid())])
+    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
         return False

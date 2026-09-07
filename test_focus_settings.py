@@ -12,6 +12,22 @@ from views import ViewRegistration, focus_existing
 
 
 class PreferenceTests(unittest.TestCase):
+    def test_focus_handoff_uses_the_candidate_selected_before_launcher_closes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            registration = ViewRegistration(directory, "workbox")
+            try:
+                with patch("views.subprocess.run") as probe, patch("views.delayed_focus", return_value=True) as launch:
+                    probe.return_value.returncode = 0
+                    probe.return_value.stdout = json.dumps({"title": registration.title, "window": 100, "origin": 200})
+                    self.assertTrue(focus_existing(directory))
+                    args = launch.call_args.args[0]
+                    self.assertIn("-AfterPid", args)
+                    self.assertEqual(args[args.index("-WindowHandle") + 1], "100")
+                    self.assertEqual(args[args.index("-InvokeWindow") + 1], "200")
+            finally:
+                registration.close()
+
     def test_default_round_trip_and_invalid_settings(self):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder)
