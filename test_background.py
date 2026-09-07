@@ -1,4 +1,6 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import os
 from pathlib import Path
 import socket
@@ -50,7 +52,11 @@ class BackgroundSettingsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 supervisor.dispatch(request)
             request["command"] = "stop_all"
+            store.path.write_text("invalid settings")
             self.assertFalse(supervisor.dispatch(request)["running"])
+            request["command"] = "shutdown"
+            self.assertTrue(supervisor.dispatch(request)["ok"])
+            self.assertTrue(supervisor.stopping.is_set())
 
 
 class BackgroundKeyboardTests(unittest.IsolatedAsyncioTestCase):
@@ -95,6 +101,24 @@ class DetachedProcessTests(unittest.TestCase):
                 second = DaemonClient("workbox", directory)
                 second.poll()
                 self.assertEqual(exchange(directory, "status")["pid"], server.pid)
+                a = Forward.make(19000, 9000, "First view")
+                b = Forward.make(19001, 9001, "Second view")
+                with ThreadPoolExecutor(max_workers=2) as clients:
+                    saves = [clients.submit(first.upsert, a), clients.submit(second.upsert, b)]
+                    for save in saves:
+                        save.result(timeout=5)
+                first.poll()
+                second.poll()
+                self.assertEqual(first.forwards, second.forwards)
+                self.assertTrue({a.id, b.id}.issubset(r.id for r in first.forwards))
+                changed = first.upsert(replace(a, name="Renamed"), expected=a)
+                with self.assertRaisesRegex(OSError, "changed in another view"):
+                    second.upsert(replace(a, name="Stale edit"), expected=a)
+                second.delete(changed)
+                first.poll()
+                self.assertNotIn(a.id, [r.id for r in first.forwards])
+                store.load()
+                self.assertEqual(store.forwards, first.forwards)
                 endpoint = json.loads((directory / "endpoint.json").read_text())
                 with socket.create_connection(("127.0.0.1", endpoint["port"]), timeout=2) as connection:
                     connection.sendall(b'{"protocol":1,"command":"shutdown","token":"wrong"}\n')

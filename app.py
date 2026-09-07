@@ -123,6 +123,7 @@ Q / Ctrl+Q    Close the UI (background tunnels keep running)
 Favorites are saved automatically. Nothing starts automatically.
 Background mode is ON by default: you may close the entire Terminal app.
 Reopen the UI to manage the same running tunnels. S explicitly stops all.
+Multiple views can attach at once; favorites and tunnel state stay in sync.
 With --foreground, closing the UI stops its tunnels instead.
 Signing out, rebooting, or loss of the SSH connection ends the tunnels.
 ON means SSH is listening locally; the remote service must be running.
@@ -163,6 +164,7 @@ class PortApp(App):
         self.theme = "textual-dark"
         self.last_statuses = None
         self.last_details: dict[str, str] = {}
+        self.view_registration = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -187,6 +189,7 @@ class PortApp(App):
                                   ("local", "LOCAL", 8), ("arrow", "->", 3), ("remote", "REMOTE", 8)):
             table.add_column(label, key=key, width=width)
         self.populate()
+        self.sync_favorites()
         table.focus()
         self.set_interval(0.25, self.tick)
 
@@ -225,6 +228,7 @@ class PortApp(App):
             self.say(f"Could not check tunnel status: {error}")
         if self.screen is not self.screen_stack[0]:
             return
+        self.sync_favorites()
         statuses = tuple((r.id, self.manager.status(r.id)) for r in self.store.forwards)
         if statuses != self.last_statuses:
             table = self.query_one(DataTable)
@@ -232,6 +236,18 @@ class PortApp(App):
                 table.update_cell(rule.id, "state", self.state_text(rule))
             self.last_statuses = statuses
         self.refresh_details()
+
+    def sync_favorites(self, select_id: str | None = None):
+        if not getattr(self.manager, "shared_favorites", False):
+            return
+        if self.store.forwards != self.manager.forwards:
+            previous = self.selected()
+            self.store.forwards = list(self.manager.forwards)
+            self.populate(select_id or (previous.id if previous else None))
+
+    def on_app_focus(self):
+        if self.view_registration:
+            self.view_registration.touch()
 
     def refresh_details(self):
         active = sum(self.manager.status(r.id) == "ON" for r in self.store.forwards)
@@ -300,14 +316,24 @@ class PortApp(App):
             return
         existing = next((r for r in self.store.forwards if (r.local_port, r.remote_port) == (local, remote)), None)
         rule = existing or Forward.make(local, remote, name)
-        if not existing and not self.save_rules(self.store.forwards + [rule]):
-            return
-        if existing and name:
-            rule = replace(existing, name=name)
-            if not self.save_rules([rule if r.id == rule.id else r for r in self.store.forwards]):
+        if getattr(self.manager, "shared_favorites", False):
+            if existing and name:
+                rule = replace(existing, name=name)
+            try:
+                rule = self.manager.upsert(rule, expected=existing, start=True)
+            except OSError as error:
+                self.say(str(error))
                 return
+            self.sync_favorites(rule.id)
+        else:
+            if not existing and not self.save_rules(self.store.forwards + [rule]):
+                return
+            if existing and name:
+                rule = replace(existing, name=name)
+                if not self.save_rules([rule if r.id == rule.id else r for r in self.store.forwards]):
+                    return
+            self.manager.start(rule)
         self.populate(rule.id)
-        self.manager.start(rule)
         event.input.value = ""
         self.action_list_focus()
         self.say(f"Saved: local {local} -> remote {remote}. Enter toggles this forward.")
@@ -349,6 +375,16 @@ class PortApp(App):
         def edited(updated: Forward | None):
             if updated is None:
                 return
+            if getattr(self.manager, "shared_favorites", False):
+                try:
+                    self.manager.upsert(updated, expected=rule)
+                except OSError as error:
+                    self.say(str(error))
+                    return
+                self.sync_favorites(updated.id)
+                self.populate(updated.id)
+                self.say(f"Saved {updated.name}: local {updated.local_port} -> remote {updated.remote_port}.")
+                return
             if any(r.id != updated.id and (r.local_port, r.remote_port) == (updated.local_port, updated.remote_port)
                    for r in self.store.forwards):
                 self.say("That port mapping is already saved. Select the existing favorite instead.")
@@ -370,7 +406,17 @@ class PortApp(App):
             return
 
         def deleted(confirmed: bool):
-            if confirmed and self.save_rules([r for r in self.store.forwards if r.id != rule.id]):
+            if not confirmed:
+                return
+            if getattr(self.manager, "shared_favorites", False):
+                try:
+                    self.manager.delete(rule)
+                except OSError as error:
+                    self.say(str(error))
+                    return
+                self.sync_favorites()
+                self.say(f"Deleted {rule.name}.")
+            elif self.save_rules([r for r in self.store.forwards if r.id != rule.id]):
                 self.manager.stop(rule.id)
                 self.populate()
                 self.say(f"Deleted {rule.name}.")
@@ -414,19 +460,18 @@ def main():
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
     parser.add_argument("--host", help="SSH config alias or user@hostname; saved for future launches")
     parser.add_argument("--foreground", action="store_true", help="Stop tunnels when the UI closes (background is the default)")
+    parser.add_argument("--focus-existing", action="store_true", help="Focus an existing live Terminal view if possible; otherwise open a new view")
     parser.add_argument("--stop-all", action="store_true", help="Stop background tunnels without opening the UI")
     parser.add_argument("--stop-daemon", action="store_true", help="Stop background tunnels and their supervisor")
     parser.add_argument("--check", action="store_true", help="Validate saved settings without opening tunnels")
     options = parser.parse_args()
-    lock = manager = daemon_lock = None
+    lock = manager = daemon_lock = registration = None
     try:
         if options.stop_all or options.stop_daemon:
             from background import exchange
             exchange(options.data_dir, "shutdown" if options.stop_daemon else "stop_all")
             print("Background tunnels stopped.")
             return 0
-        if not options.check:
-            lock = InstanceLock(options.data_dir)
         store = Store(options.data_dir)
         store.load()
         if options.host:
@@ -446,19 +491,31 @@ def main():
             return 0
         if not store.host:
             raise ValueError("Choose an SSH target on first launch: app.py --host YOUR_SSH_ALIAS")
+        if options.focus_existing and not options.foreground:
+            from views import focus_existing
+            if focus_existing(options.data_dir):
+                return 0
         if store.keep_alive and not options.foreground:
             from background import DaemonClient
             manager = DaemonClient(store.host, options.data_dir)
         else:
+            lock = InstanceLock(options.data_dir)
             daemon_lock = InstanceLock(options.data_dir, "daemon.lock")
             manager = TunnelManager(store.host, options.data_dir)
-        PortApp(store, manager).run()
+        application = PortApp(store, manager)
+        if getattr(manager, "persistent", False):
+            from views import ViewRegistration
+            registration = ViewRegistration(options.data_dir, store.host)
+            application.view_registration = registration
+        application.run()
         return 0
     except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
         print(f"Port manager: {error}", file=sys.stderr)
         print(f"Settings: {options.data_dir / 'forwards.json'}", file=sys.stderr)
         return 1
     finally:
+        if registration:
+            registration.close()
         if manager and not getattr(manager, "persistent", False):
             manager.close()
         if daemon_lock:

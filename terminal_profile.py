@@ -13,6 +13,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--name", default="Port Forward TUI")
     parser.add_argument("--settings", type=Path, help="Explicit Windows Terminal settings.json path")
+    parser.add_argument("--focus-shortcut", help="Optional Terminal key chord that focuses an existing view or opens one")
     options = parser.parse_args()
     local = Path(os.environ["LOCALAPPDATA"])
     candidates = [local / "Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json",
@@ -41,6 +42,22 @@ def main():
         profiles.append(profile)
     else:
         found.update(profile)
+    if options.focus_shortcut:
+        action_id = "User.PortForwardTUI.Focus." + guid.strip("{}")
+        for binding in data.get("keybindings", []):
+            if binding.get("keys") == options.focus_shortcut and binding.get("id") != action_id:
+                raise SystemExit("That shortcut is already assigned. Settings were not changed.")
+        command = subprocess.list2cmdline([str(python), str(root / "app.py"), "--focus-existing"])
+        action = {"id": action_id, "command": {"action": "newTab", "profile": guid, "commandline": command}}
+        actions = data.setdefault("actions", [])
+        previous = next((a for a in actions if a.get("id") == action_id), None)
+        if previous:
+            previous.update(action)
+        else:
+            actions.append(action)
+        keys = data.setdefault("keybindings", [])
+        if not any(k.get("id") == action_id and k.get("keys") == options.focus_shortcut for k in keys):
+            keys.append({"id": action_id, "keys": options.focus_shortcut})
     if path.read_bytes() != original:
         raise SystemExit("Terminal settings changed while preparing the profile. Please retry.")
     backup = path.with_name(path.name + ".before-port-forward-tui-" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".bak")

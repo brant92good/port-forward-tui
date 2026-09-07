@@ -2,7 +2,8 @@
 
 A keyboard-first SSH port-forward manager for **Windows Terminal**.
 Save common ports, toggle them with Enter, and close the entire terminal while
-your tunnels keep running in the background.
+your tunnels keep running in the background. Attach multiple views to the same
+session, with shared favorites and tunnel state.
 
 ```text
   QUICK FORWARD
@@ -58,6 +59,39 @@ Settings with this command line (adjust the checkout path):
 ```text
 "C:\path\port-forward-tui\.venv\Scripts\python.exe" "C:\path\port-forward-tui\app.py"
 ```
+
+## Multiple views and a return-to-app shortcut
+
+Every launch from the dropdown opens another view connected to the same
+background session. Favorites and tunnel status update across views; each view
+keeps its own selection. Closing any or all views leaves the tunnels running.
+Saving from two views preserves both additions. If someone changes a favorite
+while you are editing it, the app asks you to reopen Edit to avoid overwriting
+their change.
+
+To add a Windows Terminal shortcut that returns to an existing view, use:
+
+```powershell
+.\install.ps1 -HostName workbox -FocusShortcut 'ctrl+alt+p'
+```
+
+The shortcut selects the most recently focused live Ports tab it can find,
+including in another Terminal window. If none can be focused, it opens another
+connected view. The dropdown continues to open a new view. Existing shortcut
+assignments are checked before saving. This is a Terminal key binding; it is
+active while Terminal has keyboard focus.
+
+You can also run `.\.venv\Scripts\python.exe app.py --focus-existing` from a
+shell or your own shortcut. Focus is requested only by this option; the
+background supervisor never raises windows. Tab discovery uses Windows
+Terminal's accessibility interface and application titles, so keep application
+titles enabled for this profile. A manually renamed tab may open a new view
+instead. Foreground mode supports one view at a time.
+
+When upgrading from v0.1.0, close older Ports views, run
+`.\.venv\Scripts\python.exe app.py --stop-daemon` once, then reopen the app.
+That one-time supervisor restart stops active tunnels; select their saved
+favorites to start them again.
 
 ## Keyboard
 
@@ -142,7 +176,8 @@ Treat that directory as private to your Windows account.
 ```
 
 Tests cover saved settings, keyboard flows, port conflicts, owned-process
-cleanup, background detachment, IPC authentication, and Terminal registration.
+cleanup, background detachment, IPC authentication, concurrent shared views,
+conflicting edits, and Terminal registration.
 They do not require a reachable SSH server. To opt into a real transport check
 against an existing SSH alias (whose server listens on remote loopback port 22):
 

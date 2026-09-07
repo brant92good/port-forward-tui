@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import re
 import socket
 import socketserver
 import subprocess
@@ -14,7 +15,7 @@ import sys
 import threading
 import time
 
-from forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, validate_host
+from forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, port, validate_host
 
 PROTOCOL = 1
 MAX_RESPONSE = 2 * 1024 * 1024
@@ -84,7 +85,10 @@ class DaemonClient:
         self.running: dict[str, bool] = {}
         self.states: dict[str, str] = {}
         self.logs: dict[str, str] = {}
+        self.forwards: list[Forward] = []
         self._apply(ensure_daemon(self.directory))
+        if not self.shared_favorites:
+            raise OSError("The background manager needs an update. Run app.py --stop-daemon once, then reopen the app.")
 
     def _apply(self, result: dict):
         if result.get("host") != self.host:
@@ -92,9 +96,20 @@ class DaemonClient:
         self.running = dict.fromkeys(result["running"], True)
         self.states = result["states"]
         self.logs = result["details"]
+        self.shared_favorites = "shared_favorites" in result.get("capabilities", [])
+        self.forwards = [Forward(**row) for row in result.get("forwards", [])]
 
     def _call(self, command: str, **arguments):
-        self._apply(exchange(self.directory, command, **arguments))
+        result = exchange(self.directory, command, **arguments)
+        self._apply(result)
+        return result
+
+    def upsert(self, rule: Forward, expected: Forward | None = None, start: bool = False) -> Forward:
+        result = self._call("upsert", rule=asdict(rule), expected=asdict(expected) if expected else None, start=start)
+        return next(r for r in self.forwards if r.id == result["rule_id"])
+
+    def delete(self, rule: Forward):
+        self._call("delete", rule_id=rule.id, expected=asdict(rule))
 
     def poll(self):
         try:
@@ -136,6 +151,7 @@ class Supervisor:
 
     def snapshot(self):
         return {"ok": True, "protocol": PROTOCOL, "pid": os.getpid(), "host": self.manager.host,
+                "capabilities": ["shared_favorites"], "forwards": [asdict(r) for r in self.store.forwards],
                 "running": list(self.manager.running), "states": dict(self.manager.states),
                 "details": {key: self.manager.details(key)[-6000:] for key in self.manager.states}}
 
@@ -147,14 +163,55 @@ class Supervisor:
             return {"ok": False, "error": "Incompatible background protocol; restart the background manager"}
         with self.lock:
             action = request.get("command")
-            if action == "start":
+            # Stopping must still work if the user breaks or changes the settings.
+            if action not in ("stop", "stop_all", "shutdown"):
                 self.store.load()
                 if self.store.host != self.manager.host:
                     raise ValueError("SSH host changed. Stop the background manager before switching hosts.")
+            result_rule = None
+            if action == "start":
                 rule = next((r for r in self.store.forwards if r.id == request.get("rule_id")), None)
                 if rule is None:
                     raise ValueError("Save the forward before starting it.")
                 self.manager.start(rule)
+            elif action == "upsert":
+                row = request.get("rule")
+                if not isinstance(row, dict) or not re.fullmatch(r"[a-f0-9]{32}", str(row.get("id", ""))):
+                    raise ValueError("Invalid favorite ID")
+                name = row.get("name")
+                if not isinstance(name, str) or not 1 <= len(name) <= 80:
+                    raise ValueError("A favorite name must contain 1 to 80 characters")
+                rule = Forward(row["id"], name, port(row["local_port"]), port(row["remote_port"]))
+                current = next((r for r in self.store.forwards if r.id == rule.id), None)
+                expected = request.get("expected")
+                if expected is not None and (current is None or asdict(current) != expected):
+                    raise ValueError("This favorite changed in another view. Reopen Edit and try again.")
+                if current is not None and expected is None and current != rule:
+                    raise ValueError("This favorite changed in another view. Refresh and try again.")
+                duplicate = next((r for r in self.store.forwards if r.id != rule.id
+                                  and (r.local_port, r.remote_port) == (rule.local_port, rule.remote_port)), None)
+                if duplicate:
+                    if current:
+                        raise ValueError("That mapping is already saved in another favorite.")
+                    rule = duplicate
+                else:
+                    updated = [rule if r.id == rule.id else r for r in self.store.forwards]
+                    if current is None:
+                        updated.append(rule)
+                    self.store.save(updated)
+                    if current and current != rule and rule.id in self.manager.running:
+                        self.manager.stop(rule.id)
+                        self.manager.start(rule)
+                if request.get("start") is True:
+                    self.manager.start(rule)
+                result_rule = rule.id
+            elif action == "delete":
+                current = next((r for r in self.store.forwards if r.id == request.get("rule_id")), None)
+                if current:
+                    if asdict(current) != request.get("expected"):
+                        raise ValueError("This favorite changed in another view. Select it again before deleting.")
+                    self.store.save([r for r in self.store.forwards if r.id != current.id])
+                    self.manager.stop(current.id)
             elif action == "stop":
                 rule_id = request.get("rule_id")
                 if not isinstance(rule_id, str):
@@ -167,7 +224,10 @@ class Supervisor:
             elif action != "status":
                 raise ValueError("Unknown command")
             self.manager.poll()
-            return self.snapshot()
+            result = self.snapshot()
+            if result_rule:
+                result["rule_id"] = result_rule
+            return result
 
 
 class LocalServer(socketserver.ThreadingTCPServer):
