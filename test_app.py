@@ -270,6 +270,18 @@ class KeyboardTests(unittest.IsolatedAsyncioTestCase):
             await pilot.press("escape")
             self.assertIsInstance(self.app.focused, DataTable)
 
+    async def test_immediate_edit_typing_keeps_every_digit_and_the_name(self):
+        original = self.store.forwards[0]
+        async with self.app.run_test(size=(100, 36)) as pilot:
+            for local_port in (19001, 28002, 37003, 46004, 55005):
+                # No pause between opening the dialog and typing. A queued
+                # focus change used to consume or overwrite the first digit.
+                await pilot.press("e", *str(local_port), "enter")
+                changed = self.store.forwards[0]
+                self.assertEqual(changed.local_port, local_port)
+                self.assertEqual(changed.name, original.name)
+                self.assertEqual(changed.remote_port, original.remote_port)
+
     async def test_delete_cancel_confirm_and_quit_cleanup(self):
         async with self.app.run_test(size=(100, 32)) as pilot:
             await pilot.press("enter", "d")

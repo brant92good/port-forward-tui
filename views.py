@@ -106,10 +106,14 @@ def focus_existing(directory: Path, probe_only: bool = False) -> bool:
     command = [str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                "-File", str(Path(__file__).with_name("focus_existing.ps1")), "-TitlesBase64", payload]
     scope = read_scope(directory)
-    if scope == "window":
-        # Probe mode never changes a title or guesses which window owns this view.
-        if probe_only:
+    command.extend(["-Scope", scope])
+    if probe_only:
+        # A read-only probe cannot identify the caller's window without a marker.
+        if scope == "window":
             return False
+    else:
+        # Resolve the invoking Terminal window even for a global search. The user
+        # may switch applications while the accessibility lookup is running.
         try:
             command.extend(["-OriginTitle", mark_origin()])
         except OSError:
@@ -124,6 +128,8 @@ def focus_existing(directory: Path, probe_only: bool = False) -> bool:
         if probe_only:
             return True
         target = json.loads(result.stdout)
+        if not isinstance(target.get("origin"), int) or not target["origin"]:
+            return False
         titles = base64.b64encode(json.dumps([target["title"]]).encode()).decode("ascii")
         return delayed_focus([str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                               "-File", str(Path(__file__).with_name("focus_existing.ps1")), "-TitlesBase64", titles,

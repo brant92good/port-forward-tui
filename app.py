@@ -85,6 +85,9 @@ class Confirm(ModalScreen[bool]):
 
 
 class EditForward(ModalScreen[Forward | None]):
+    # Set the initial target while mounting. Widget.focus() is deferred and can
+    # route a fast first key to Name, or reselect the first typed digit later.
+    AUTO_FOCUS = "#local"
     BINDINGS = [Binding("escape", "cancel", "Cancel"), Binding("ctrl+s", "save", "Save", priority=True)]
 
     def __init__(self, rule: Forward):
@@ -105,10 +108,6 @@ class EditForward(ModalScreen[Forward | None]):
             with Horizontal(classes="buttons"):
                 yield Button("Save", variant="primary", id="save")
                 yield Button("Cancel", id="cancel")
-
-    def on_mount(self):
-        self.query_one("#local", Input).focus()
-        self.query_one("#local", Input).action_select_all()
 
     def action_cancel(self):
         self.dismiss(None)

@@ -17,14 +17,57 @@ class PreferenceTests(unittest.TestCase):
             directory = Path(folder)
             registration = ViewRegistration(directory, "workbox")
             try:
-                with patch("views.subprocess.run") as probe, patch("views.delayed_focus", return_value=True) as launch:
+                with patch("views.mark_origin", return_value="unique-launcher"), \
+                        patch("views.subprocess.run") as probe, patch("views.delayed_focus", return_value=True) as launch:
                     probe.return_value.returncode = 0
                     probe.return_value.stdout = json.dumps({"title": registration.title, "window": 100, "origin": 200})
                     self.assertTrue(focus_existing(directory))
+                    probe_args = probe.call_args.args[0]
+                    self.assertEqual(probe_args[probe_args.index("-OriginTitle") + 1], "unique-launcher")
+                    self.assertEqual(probe_args[probe_args.index("-Scope") + 1], "all")
                     args = launch.call_args.args[0]
                     self.assertIn("-AfterPid", args)
                     self.assertEqual(args[args.index("-WindowHandle") + 1], "100")
                     self.assertEqual(args[args.index("-InvokeWindow") + 1], "200")
+            finally:
+                registration.close()
+
+    def test_global_focus_fails_closed_without_a_resolved_terminal_origin(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            registration = ViewRegistration(directory, "workbox")
+            try:
+                with patch("views.mark_origin", side_effect=OSError("No console")), \
+                        patch("views.subprocess.run") as probe, patch("views.delayed_focus") as launch:
+                    self.assertFalse(focus_existing(directory))
+                    probe.assert_not_called()
+                    launch.assert_not_called()
+                with patch("views.mark_origin", return_value="unique-launcher"), \
+                        patch("views.subprocess.run") as probe, patch("views.delayed_focus") as launch:
+                    probe.return_value.returncode = 0
+                    for origin in (None, 0):
+                        with self.subTest(origin=origin):
+                            probe.return_value.stdout = json.dumps({"title": registration.title, "window": 100, "origin": origin})
+                            self.assertFalse(focus_existing(directory))
+                    launch.assert_not_called()
+            finally:
+                registration.close()
+
+    def test_read_only_probe_never_marks_or_activates_a_tab(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            registration = ViewRegistration(directory, "workbox")
+            try:
+                with patch("views.mark_origin") as mark, patch("views.subprocess.run") as probe, \
+                        patch("views.delayed_focus") as launch:
+                    probe.return_value.returncode = 0
+                    self.assertTrue(focus_existing(directory, probe_only=True))
+                    self.assertNotIn("-OriginTitle", probe.call_args.args[0])
+                    save_scope(directory, "window")
+                    self.assertFalse(focus_existing(directory, probe_only=True))
+                    self.assertEqual(probe.call_count, 1)
+                    mark.assert_not_called()
+                    launch.assert_not_called()
             finally:
                 registration.close()
 
@@ -51,6 +94,7 @@ class PreferenceTests(unittest.TestCase):
                     self.assertFalse(focus_existing(directory))
                     args = run.call_args.args[0]
                     self.assertEqual(args[args.index("-OriginTitle") + 1], "unique-launcher")
+                    self.assertEqual(args[args.index("-Scope") + 1], "window")
                     self.assertEqual(run.call_count, 1)
                 with patch("views.mark_origin", side_effect=OSError("No console")), patch("views.subprocess.run") as run:
                     self.assertFalse(focus_existing(directory))
