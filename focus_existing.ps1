@@ -65,16 +65,40 @@ public static class PortsWindowFocus {
                 $portsHandle = [IntPtr]$portsWindow.Current.NativeWindowHandle
                 # Accessibility enumeration can take time. Recheck immediately
                 # before restoring or selecting anything, not just before lookup.
+                $portsForeground = [PortsWindowFocus]::GetForegroundWindow().ToInt64()
                 if ($InvokeWindow) {
-                    $portsForeground = [PortsWindowFocus]::GetForegroundWindow().ToInt64()
                     if ($portsForeground -ne $InvokeWindow -and $portsForeground -ne $portsHandle.ToInt64()) { exit 1 }
                 }
                 if ([PortsWindowFocus]::IsIconic($portsHandle)) {
                     [void][PortsWindowFocus]::ShowWindow($portsHandle, 9)
                 }
                 $portsSelection.Select()
-                if ([PortsWindowFocus]::GetForegroundWindow() -eq $portsHandle -or [PortsWindowFocus]::SetForegroundWindow($portsHandle)) {
-                    exit 0
+                $portsAfterSelect = [PortsWindowFocus]::GetForegroundWindow().ToInt64()
+                if ($portsAfterSelect -ne $portsForeground -and $portsAfterSelect -ne $portsHandle.ToInt64()) { exit 1 }
+                if ($portsAfterSelect -ne $portsHandle.ToInt64() -and -not [PortsWindowFocus]::SetForegroundWindow($portsHandle)) { exit 2 }
+                $portsContentCondition = [System.Windows.Automation.AndCondition]::new([System.Windows.Automation.Condition[]]@(
+                    [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text),
+                    [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::IsKeyboardFocusableProperty, $true),
+                    [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::IsOffscreenProperty, $false),
+                    [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::IsTextPatternAvailableProperty, $true)
+                ))
+                $portsContentDeadline = [DateTime]::UtcNow.AddSeconds(2)
+                while ([DateTime]::UtcNow -lt $portsContentDeadline) {
+                    if (-not $portsSelection.Current.IsSelected -or [PortsWindowFocus]::GetForegroundWindow() -ne $portsHandle) { exit 1 }
+                    try {
+                        $portsContent = $portsWindow.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $portsContentCondition)
+                        if ($null -ne $portsContent) {
+                            # Tab selection leaves keyboard focus in the tab strip.
+                            # Check again after lookup before focusing the TUI.
+                            if (-not $portsSelection.Current.IsSelected -or [PortsWindowFocus]::GetForegroundWindow() -ne $portsHandle) { exit 1 }
+                            $portsContent.SetFocus()
+                            $portsFocused = [System.Windows.Automation.AutomationElement]::FocusedElement
+                            if ([PortsWindowFocus]::GetForegroundWindow() -eq $portsHandle -and $portsSelection.Current.IsSelected -and $null -ne $portsFocused -and
+                                $portsFocused.Current.ControlType -eq [System.Windows.Automation.ControlType]::Text -and
+                                ($portsFocused.GetRuntimeId() -join '.') -ceq ($portsContent.GetRuntimeId() -join '.')) { exit 0 }
+                        }
+                    } catch [System.Windows.Automation.ElementNotAvailableException] { }
+                    Start-Sleep -Milliseconds 50
                 }
                 exit 2
             }
