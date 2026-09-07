@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+*.bak
+endpoint.json
+forwards.json
+*.lock
+*.tmp
+artifacts/
+dist/
+build/
+# Local migration helpers contain this computer's profile IDs and SSH alias.
+/install_terminal.py
+/migrate_local.py
+/local_*.py
