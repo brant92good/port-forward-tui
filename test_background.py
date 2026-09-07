@@ -72,6 +72,45 @@ class BackgroundKeyboardTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DetachedProcessTests(unittest.TestCase):
+    def test_background_control_server_and_reattach(self):
+        # Exercise the real server even on runners that prohibit job breakaway.
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            store = Store(directory)
+            store.load()
+            store.host = "workbox"
+            store.save(store.forwards)
+            server = subprocess.Popen([sys._base_executable, str(Path(__file__).with_name("background.py")),
+                                       "--serve", "--data-dir", folder],
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                      creationflags=subprocess.CREATE_NO_WINDOW)
+            try:
+                deadline = time.monotonic() + 8
+                while not (directory / "endpoint.json").exists() and time.monotonic() < deadline:
+                    self.assertIsNone(server.poll(), "Control server exited during startup")
+                    time.sleep(.05)
+                self.assertTrue((directory / "endpoint.json").exists())
+                first = DaemonClient("workbox", directory)
+                first.poll()
+                second = DaemonClient("workbox", directory)
+                second.poll()
+                self.assertEqual(exchange(directory, "status")["pid"], server.pid)
+                endpoint = json.loads((directory / "endpoint.json").read_text())
+                with socket.create_connection(("127.0.0.1", endpoint["port"]), timeout=2) as connection:
+                    connection.sendall(b'{"protocol":1,"command":"shutdown","token":"wrong"}\n')
+                    self.assertFalse(json.loads(connection.recv(4096))["ok"])
+                second.close()
+                self.assertFalse(exchange(directory, "status")["running"])
+                exchange(directory, "shutdown")
+                server.wait(timeout=5)
+                self.assertEqual(server.returncode, 0)
+                self.assertFalse((directory / "endpoint.json").exists())
+            finally:
+                if server.poll() is None:
+                    server.kill()
+                server.wait()
+                server.stderr.close()
+
     def test_supervisor_survives_launcher_death_and_can_be_reattached(self):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder)
@@ -100,7 +139,11 @@ time.sleep(60)
                     if launcher.poll() is not None:
                         break
                     time.sleep(.1)
-                self.assertIn("ready", stdout_path.read_text(errors="replace"))
+                startup_output = stdout_path.read_text(errors="replace")
+                if (os.environ.get("GITHUB_ACTIONS") == "true"
+                        and "Windows prevented background detachment." in startup_output):
+                    self.skipTest("Hosted runner job forbids process breakaway; run this test on a desktop Windows session")
+                self.assertIn("ready", startup_output)
                 first = exchange(directory, "status")
                 launcher.kill()
                 launcher.wait(timeout=5)

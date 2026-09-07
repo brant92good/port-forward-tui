@@ -154,6 +154,12 @@ This creates an isolated temporary forward, exits its initiating client,
 verifies traffic still crosses it, reconnects a new client, and explicitly
 cleans up. Your saved favorites are not changed.
 
+Some managed process environments (including GitHub-hosted Windows runners)
+prohibit breaking out of their process job. The app reports that restriction
+instead of claiming a tunnel will survive. Use a regular Windows Terminal
+session for background mode. CI still tests the real control server; it skips
+only the desktop detachment test when the runner explicitly denies breakaway.
+
 Implementation: Python, [Textual](https://textual.textualize.io/), Windows
 [process jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
 and [OpenSSH local forwarding](https://man.openbsd.org/ssh#L).
