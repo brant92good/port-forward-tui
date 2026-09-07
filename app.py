@@ -222,6 +222,9 @@ class PortApp(App):
         self.refresh_details()
 
     def tick(self):
+        # A queued timer can fire while Textual is removing the closing view.
+        if not self.is_running:
+            return
         try:
             self.manager.poll()
         except OSError as error:

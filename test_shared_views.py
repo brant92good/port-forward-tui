@@ -90,6 +90,18 @@ class SharedStateTests(unittest.TestCase):
 
 
 class SharedKeyboardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_late_refresh_after_view_closes_does_not_touch_ui_or_daemon(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store, supervisor = session(folder)
+            client = SharedClient(supervisor)
+            application = PortApp(store, client)
+            async with application.run_test() as pilot:
+                await pilot.press("enter", "q")
+            with patch.object(client, "poll") as poll:
+                application.tick()
+                poll.assert_not_called()
+            self.assertTrue(supervisor.manager.running)
+
     async def test_two_open_views_sync_add_edit_stop_delete_and_detach(self):
         with tempfile.TemporaryDirectory() as folder:
             _, supervisor = session(folder)
