@@ -76,10 +76,21 @@ To add a Windows Terminal shortcut that returns to an existing view, use:
 ```
 
 The shortcut selects the most recently focused live Ports tab it can find,
-including in another Terminal window. If none can be focused, it opens another
+including in another Terminal window by default. If none can be focused, it opens another
 connected view. The dropdown continues to open a new view. Existing shortcut
 assignments are checked before saving. This is a Terminal key binding; it is
 active while Terminal has keyboard focus.
+
+Press **F2** in the app to choose **Focus scope**:
+
+- **All Terminal windows** returns to your last-used view anywhere (the default).
+- **Current Terminal window only** returns to the last-used view in the window
+  where you invoked the shortcut. If that window has no matching view, it opens
+  one there, even if another window has a view.
+
+Use Up/Down and Enter to save, or Esc to cancel. The next shortcut invocation
+uses the setting immediately. It is stored in `ui-settings.json` beside your
+favorites; changing it does not restart or change your tunnels.
 
 You can also run `.\.venv\Scripts\python.exe app.py --focus-existing` from a
 shell or your own shortcut. Focus is requested only by this option; the
@@ -97,6 +108,7 @@ favorites to start them again.
 
 | Key / input | Action |
 | --- | --- |
+| F2 | Settings: choose whether the return shortcut searches this window or all windows |
 | `8000` then Enter | Save and start local **8000** -> remote **8000** |
 | `18000:8000` then Enter | Save and start local **18000** -> remote **8000** |
 | `8888 Jupyter` then Enter | Give a forward a friendly name |

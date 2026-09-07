@@ -16,7 +16,9 @@ DataTable > .datatable--cursor { background: #255768; color: #ffffff; }
 #lifetime { margin-bottom: 0; }
 Footer { background: #15243b; }
 ModalScreen { align: center middle; background: #050910 75%; }
-#edit-dialog, #confirm-dialog, #help-dialog { width: 70; max-width: 95%; max-height: 95%; height: auto; padding: 1 2; border: round #78e5d0; background: #142237; }
+#edit-dialog, #confirm-dialog, #help-dialog, #settings-dialog { width: 70; max-width: 95%; max-height: 95%; height: auto; padding: 1 2; border: round #78e5d0; background: #142237; }
+#focus-scope { height: auto; margin: 1 0; }
+#settings-error { height: auto; color: #ff838b; }
 #help-dialog { width: 78; }
 .dialog-title { color: #78e5d0; text-style: bold; margin-bottom: 1; }
 #edit-dialog Input { margin-bottom: 1; }

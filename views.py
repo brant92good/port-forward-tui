@@ -10,6 +10,19 @@ import sys
 import time
 import uuid
 
+from focus_settings import read_scope
+
+
+def mark_origin() -> str:
+    """Give this launcher tab a unique title so its window can be found exactly."""
+    title = "Shortcut | " + uuid.uuid4().hex
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.SetConsoleTitleW.argtypes = [wintypes.LPCWSTR]
+    kernel.SetConsoleTitleW.restype = wintypes.BOOL
+    if not sys.stdout.isatty() or not kernel.SetConsoleTitleW(title):
+        raise OSError("Cannot identify the current Terminal tab")
+    return title
+
 
 def process_alive(pid: int) -> bool:
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -78,6 +91,15 @@ def focus_existing(directory: Path, probe_only: bool = False) -> bool:
     powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     command = [str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                "-File", str(Path(__file__).with_name("focus_existing.ps1")), "-TitlesBase64", payload]
+    scope = read_scope(directory)
+    if scope == "window":
+        # Probe mode never changes a title or guesses which window owns this view.
+        if probe_only:
+            return False
+        try:
+            command.extend(["-OriginTitle", mark_origin()])
+        except OSError:
+            return False
     if probe_only:
         command.append("-ProbeOnly")
     try:

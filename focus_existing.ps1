@@ -1,5 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$TitlesBase64,
+    [string]$OriginTitle = '',
     [switch]$ProbeOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -10,6 +11,18 @@ try {
     $portsWindowCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'CASCADIA_HOSTING_WINDOW_CLASS')
     $portsWindows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $portsWindowCondition)
     $portsTabCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
+    if ($OriginTitle) {
+        $portsOrigin = $null
+        foreach ($portsWindow in $portsWindows) {
+            foreach ($portsTab in $portsWindow.FindAll([System.Windows.Automation.TreeScope]::Descendants, $portsTabCondition)) {
+                if ($portsTab.Current.Name -ceq $OriginTitle) { $portsOrigin = $portsWindow; break }
+            }
+            if ($null -ne $portsOrigin) { break }
+        }
+        # Never fall back to another window when the launcher cannot be located.
+        if ($null -eq $portsOrigin) { exit 1 }
+        $portsWindows = @($portsOrigin)
+    }
     foreach ($portsTitle in $portsTitles) {
         foreach ($portsWindow in $portsWindows) {
             $portsTabs = $portsWindow.FindAll([System.Windows.Automation.TreeScope]::Descendants, $portsTabCondition)

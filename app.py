@@ -13,9 +13,47 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, OptionList, Static
 
 from forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, port, quick_ports, validate_host
+from focus_settings import SCOPES, SCOPE_LABELS, read_scope, save_scope
+
+
+class Settings(ModalScreen[str | None]):
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, directory: Path):
+        super().__init__()
+        self.directory = directory
+        self.scope = read_scope(directory)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="settings-dialog"):
+            yield Static("SETTINGS", classes="dialog-title")
+            yield Label("Return-to-app shortcut: focus scope")
+            yield OptionList(*SCOPE_LABELS, id="focus-scope")
+            yield Static("Up / Down chooses. Enter saves. Esc cancels.\n"
+                         "Returns to the last-used view within this scope.\n"
+                         "If none exists there, a new view opens in the current window.", classes="muted")
+            yield Static("", id="settings-error", markup=False)
+
+    def on_mount(self):
+        options = self.query_one(OptionList)
+        options.highlighted = SCOPES.index(self.scope)
+        options.focus()
+
+    @on(OptionList.OptionSelected)
+    def selected_scope(self, event: OptionList.OptionSelected):
+        scope = SCOPES[event.option_index]
+        try:
+            save_scope(self.directory, scope)
+        except (OSError, ValueError) as error:
+            self.query_one("#settings-error", Static).update(str(error))
+            return
+        self.dismiss(scope)
+
+    def action_cancel(self):
+        self.dismiss(None)
 
 
 class Confirm(ModalScreen[bool]):
@@ -118,6 +156,7 @@ B             Open http://127.0.0.1:LOCAL in your browser
 S             Stop all tunnels
 Esc           Return from quick entry to the saved list
 Q / Ctrl+Q    Close the UI (background tunnels keep running)
+F2            Settings: return to a view here or across all Terminal windows
 ?             This help
 
 Favorites are saved automatically. Nothing starts automatically.
@@ -151,6 +190,7 @@ class PortApp(App):
         Binding("space", "toggle", "On / off"), Binding("d", "delete_forward", "Delete"),
         Binding("r", "restart", "Restart"), Binding("b", "browser", "Browser"),
         Binding("s", "stop_all", "Stop all"), Binding("question_mark", "help", "Help"),
+        Binding("f2", "settings", "Settings"),
         Binding("q", "request_quit", "Quit"),
         Binding("ctrl+q", "request_quit", "Quit", show=False, priority=True),
         Binding("ctrl+c", "request_quit", "Quit", show=False, priority=True),
@@ -370,7 +410,7 @@ class PortApp(App):
             self.say(f"Reconnecting {rule.name}.")
             self.tick()
 
-    def action_edit_forward(self):
+    async def action_edit_forward(self):
         rule = self.selected()
         if not rule:
             return
@@ -401,7 +441,7 @@ class PortApp(App):
             self.populate(updated.id)
             self.say(f"Saved {updated.name}: local {updated.local_port} -> remote {updated.remote_port}.")
 
-        self.push_screen(EditForward(rule), edited)
+        await self.push_screen(EditForward(rule), edited)
 
     def action_delete_forward(self):
         rule = self.selected()
@@ -443,6 +483,15 @@ class PortApp(App):
 
     def action_help(self):
         self.push_screen(Help())
+
+    async def action_settings(self):
+        def saved(scope: str | None):
+            if scope:
+                self.say("Focus scope saved: " + SCOPE_LABELS[SCOPES.index(scope)])
+        try:
+            await self.push_screen(Settings(self.store.directory), saved)
+        except (OSError, ValueError) as error:
+            self.say(f"Could not open settings: {error}")
 
     def action_request_quit(self):
         if getattr(self.manager, "persistent", False):
