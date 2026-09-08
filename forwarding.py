@@ -74,6 +74,8 @@ class Store:
             self.save(self.forwards)
             return
         data = json.loads(self.path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("forwards"), list):
+            raise ValueError("Saved connections must be a JSON object with a forwards list. Keep a backup before repairing it.")
         if data.get("version") != 1:
             raise ValueError("Unsupported favorites file version.")
         host = data["host"]
@@ -86,6 +88,8 @@ class Store:
             raise ValueError("keep_alive must be true or false.")
         rules = []
         for row in data["forwards"]:
+            if not isinstance(row, dict):
+                raise ValueError("Each saved connection must be a JSON object with a name and two ports.")
             if not re.fullmatch(r"[a-f0-9]{32}", row["id"]):
                 raise ValueError("Invalid saved forward ID.")
             if not isinstance(row["name"], str) or len(row["name"]) > 80:

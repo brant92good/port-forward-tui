@@ -1,237 +1,208 @@
 # Port Forward TUI
 
-A keyboard-first SSH port-forward manager for **Windows Terminal**.
-Save common ports, toggle them with Enter, and close the entire terminal while
-your tunnels keep running in the background. Attach multiple views to the same
-session, with shared favorites and tunnel state.
+**Open an app running on a remote computer in your own browser. Save the connection and bring it back with your keyboard.**
 
-```text
-  QUICK FORWARD
-  8000  or  18000:8000  [optional name]
+For example: your development server runs on a remote computer at port **8000**.
+Enter `8000` here, then open **http://localhost:8000** on your laptop.
+The connection keeps working when you close Windows Terminal.
 
-  STATE         SAVED FORWARD           LOCAL   ->  REMOTE
-  ON            API / dev server        8000    ->  8000
-  OFF           Jupyter                 8888    ->  8888
+![The connection manager with saved web app and notebook connections](docs/screenshots/connections.svg)
 
-  BACKGROUND ON | Safe to close Terminal. S stops tunnels; Q closes this UI.
+*Actual app screenshot with simulated example data. The ON rows illustrate the interface; this screenshot did not connect to a server.*
+
+## Is this the project I need?
+
+| I want to… | Start here |
+| --- | --- |
+| Open remote web apps, notebooks or dashboards through local ports | **This repository.** It works on its own. |
+| Also get a remote terminal, return shortcuts and a two-tab desktop button | [Terminal Workspace](https://github.com/brant92good/terminal-workspace), which includes this app |
+| Restore my own private SSH settings and agent skills on another laptop | An optional private personal-setup repository above Terminal Workspace |
+
+**Windows 10/11 only.** You need a remote computer you can already reach using
+SSH. This app does not rent a server, deploy your code, or start the remote web
+app. It supports local TCP forwarding through Windows OpenSSH.
+
+## New to ports or SSH?
+
+- **Port:** the number in an app address. In `http://localhost:8000`, it is `8000`.
+- **Remote computer:** the server or workstation where your app is running.
+- **Local / this computer:** the Windows computer where you want to open it.
+- **SSH:** the login connection used to reach your remote computer securely.
+- **Forward / tunnel:** the connection that carries traffic from a port here to
+  a port on the remote computer. A **favorite** saves its name and port numbers.
+- **TUI:** a text-based app inside a terminal. All its controls work by keyboard.
+
+An AI coding agent can help with setup. You still need the server's address,
+your login name, and permission to connect to it. Your agent should ask for
+missing details rather than guess them.
+
+## Set up
+
+Run these commands in a **PowerShell tab inside Windows Terminal**, on Windows.
+
+| Needed | How to get it / check it |
+| --- | --- |
+| Windows Terminal | Install it from Microsoft Store. |
+| Git | Install [Git for Windows](https://git-scm.com/downloads/win); `git --version` should work. |
+| Windows Python 3.12 or newer | Install [Python](https://www.python.org/downloads/windows/), or use an existing compatible Conda installation. |
+| Windows OpenSSH Client | Windows Settings → Optional features → OpenSSH Client. `ssh -V` should work. |
+| A working SSH login | Follow the short walkthrough below if you do not already have one. |
+
+**1. Confirm your remote login.** If you normally run `ssh workbox`, then
+`workbox` is your **SSH name**. Examples here use that name; replace it with yours.
+
+```powershell
+ssh workbox
 ```
 
-## Install
+If you have an address and username instead, try `ssh yourname@server-address`.
+The first connection may ask you to confirm the server's identity; verify it
+with its owner. Type `exit` when you have confirmed that login works.
 
-Requires **Windows 10/11**, **Python 3.12+**, and the **Windows OpenSSH client**.
-Use a host alias already configured in `%USERPROFILE%\.ssh\config` and verify
-that key-based login works with `ssh YOUR_HOST` before starting.
+For a short name, you can add a block to `%USERPROFILE%\.ssh\config`
+(preserve any existing entries):
+
+```sshconfig
+Host workbox
+    HostName server-address
+    User yourname
+```
+
+Background connections cannot ask you for a password. Set up an SSH key, and
+load a passphrase-protected key into Windows `ssh-agent` if needed. Microsoft's
+[Windows SSH key guide](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement)
+walks through that step. Never paste a private key into an issue or an agent chat.
+
+**2. Download and install.** Choose a folder you will keep; shortcuts point to it.
 
 ```powershell
 git clone https://github.com/brant92good/port-forward-tui.git
 cd port-forward-tui
 .\install.ps1 -HostName workbox
+.\open.ps1
 ```
 
-Replace `workbox` with your SSH alias. The installer creates a private `.venv`,
-sets your target, and adds **Port Forward TUI** to the Windows Terminal dropdown.
-Keep the checkout in its installed location because the profile points to it.
+You can also run `.\install.ps1` and answer its SSH-name question. It reuses
+your saved name on later runs. Setup installs packages in a private `.venv`
+folder and adds an entry to the Terminal dropdown. It does not open SSH or start
+your saved connections. Global Python packages, PATH and other Terminal profiles
+are preserved.
 
-Setup tries `python.exe`, `py.exe`, then `python3.exe`, and validates Windows
-Python 3.12+ with SSL support before creating the environment. Select a specific
-installation with `-Python 'C:\path\to\python.exe'`. Conda users can activate
-their preferred environment for setup. Subsequent shortcuts launch the private
-environment by its absolute executable path, without activating Conda or loading
-a shell profile. Managed launches ignore `PYTHONHOME`, `PYTHONPATH`, and user
-site packages. Global Python packages and PATH are preserved. For tools exposing
-a script shim, pass the real Windows executable. WSL Python is not supported.
+For a particular Python installation:
+`.\install.ps1 -HostName workbox -Python 'C:\path\to\python.exe'`.
+Conda activation is only needed to select an environment for setup; shortcuts
+then call the private Python directly. Keep the base Python installed.
 
-A healthy existing `.venv` is reused, including when `-Python` is supplied.
-Keep its base Python installed. If validation fails after moving or removing
-that base, restore it or rename `.venv` as a backup and rerun setup. The
-installer reports the problem and preserves the existing directory.
+If Windows blocks the script, inspect it first and, where your organization's
+policy permits, use `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -HostName workbox`.
+This sets policy for that invocation, not for the whole computer.
 
-If your PowerShell policy prevents running the installer, run the equivalent
-commands directly:
+## Open your first remote app
 
-```powershell
-python -I -m venv .venv
-.\.venv\Scripts\python.exe -E -s -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -E -s build_focus_helper.py
-.\.venv\Scripts\python.exe -E -s app.py --host workbox --check
-.\.venv\Scripts\python.exe -E -s terminal_profile.py
-```
+1. Make sure the app is running on the **remote** computer. Suppose it uses port 8000.
+2. In Port Forward TUI, press **A**. Enter `8000` in the remote-port field.
+3. Leave the port on this computer blank to use the same number, then press **Enter**.
+4. When the row shows **ON**, press **B** to open the local HTTP address in your browser.
 
-Launch from the dropdown or with:
+![The add form explains remote and local ports and defaults to the same number](docs/screenshots/add-connection.svg)
 
-```powershell
-.\.venv\Scripts\python.exe app.py
-```
+*Actual add form, captured with example data. Tab moves between fields.*
 
-For a custom Terminal profile name, use
-`.\install.ps1 -HostName workbox -ProfileName "Ports - Workbox"`.
-Use `-NoTerminalProfile` to skip registration. For a custom Terminal settings
-location, run `terminal_profile.py --settings "C:\path\settings.json"`.
-Registration preserves the existing default shell and other profiles, and saves
-a backup. For JSONC settings with comments, add a profile manually in Terminal
-Settings with this command line (adjust the checkout path):
+Prefer fewer keystrokes? Just type **`8000` then Enter** in the main screen.
+If port 8000 is already used here, type **`18000:8000`** instead: this computer
+uses 18000, the remote app still uses 8000, and the browser address becomes
+`http://localhost:18000`. A name can follow: `18000:8000 My web app`.
 
-```text
-"C:\path\port-forward-tui\.venv\Scripts\python.exe" -E -s "C:\path\port-forward-tui\app.py"
-```
+**ON means the SSH connection is listening on this computer.** The remote app
+must also be running. The browser shortcut uses HTTP; for HTTPS, a database,
+or another protocol, use the appropriate URL or client yourself.
 
-## Multiple views and a return-to-app shortcut
-
-Every launch from the dropdown opens another view connected to the same
-background session. Favorites and tunnel status update across views; each view
-keeps its own selection. Closing any or all views leaves the tunnels running.
-Saving from two views preserves both additions. If someone changes a favorite
-while you are editing it, the app asks you to reopen Edit to avoid overwriting
-their change.
-
-To add a Windows Terminal shortcut that returns to an existing view, use:
-
-```powershell
-.\install.ps1 -HostName workbox -FocusShortcut 'ctrl+alt+p'
-```
-
-The shortcut selects the most recently focused live Ports tab it can find,
-including in another Terminal window by default. If none can be focused, it opens another
-connected view. The dropdown continues to open a new view. Existing shortcut
-assignments are checked before saving. This is a Terminal key binding; it is
-active while Terminal has keyboard focus.
-
-Returning to a live view skips loading the TUI framework. The installer builds a
-small Windows focus helper using the included .NET Framework compiler, avoiding
-PowerShell startup on each switch. It waits for the temporary launcher tab to
-close before selecting the destination, with no fixed handoff delay. If the
-helper cannot be built, the PowerShell fallback remains available.
-
-Press **F2** in the app to choose **Focus scope**:
-
-- **All Terminal windows** returns to your last-used view anywhere (the default).
-- **Current Terminal window only** returns to the last-used view in the window
-  where you invoked the shortcut. If that window has no matching view, it opens
-  one there, even if another window has a view.
-
-Use Up/Down and Enter to save, or Esc to cancel. The next shortcut invocation
-uses the setting immediately. It is stored in `ui-settings.json` beside your
-favorites; changing it does not restart or change your tunnels.
-
-You can also run `.\.venv\Scripts\python.exe app.py --focus-existing` from a
-shell or your own shortcut. Focus is requested only by this option; the
-background supervisor never raises windows. Tab discovery uses Windows
-Terminal's accessibility interface and application titles, so keep application
-titles enabled for this profile. A manually renamed tab may open a new view
-instead. Foreground mode supports one view at a time.
-
-When upgrading from v0.1.0, close older Ports views, run
-`.\.venv\Scripts\python.exe app.py --stop-daemon` once, then reopen the app.
-That one-time supervisor restart stops active tunnels; select their saved
-favorites to start them again.
-
-## Keyboard
-
-| Key / input | Action |
+| Key | What it does |
 | --- | --- |
-| F2 | Settings: choose whether the return shortcut searches this window or all windows |
-| `8000` then Enter | Save and start local **8000** -> remote **8000** |
-| `18000:8000` then Enter | Save and start local **18000** -> remote **8000** |
-| `8888 Jupyter` then Enter | Give a forward a friendly name |
-| Up / Down | Select a saved forward |
-| Enter / Space | Start or stop the selected forward |
-| `N` | Focus quick entry |
-| `E` | Edit the name or ports; the local port is selected immediately |
-| `D` | Delete a favorite (with confirmation) |
-| `R` | Restart the selected forward |
-| `B` | Open the selected active local HTTP URL |
-| `S` | Explicitly stop all tunnels |
-| Escape | Return to the saved list |
-| `Q` / Ctrl+Q | Close the UI; background tunnels continue |
-| `?` | Show help |
+| A | Add using a form; Enter saves and connects |
+| Type a number, then Enter | Save and connect using the same port on both computers |
+| Up / Down, then Enter or Space | Select a favorite and start or stop it |
+| E / D | Edit / delete the selected favorite |
+| B / R | Open its HTTP address / restart its connection |
+| N / Escape | Jump to quick entry / return to the list |
+| Q | Close this screen; background connections continue |
+| S | Stop all connections; favorites stay saved |
+| F2 / ? | Shortcut settings / help |
 
-Fresh installs include starter favorites for **3000, 5173, 8000, 8080, 8888,
-and 6006**. They initially show OFF; selecting one and pressing Enter starts it.
-Delete or edit them freely. An intentionally empty list stays empty.
+Starter favorites are examples and begin OFF. Edit or delete them freely.
+Multiple open screens share favorites and connection state. Reboot, sign-out,
+or a lost SSH connection ends running tunnels; favorites remain saved.
 
-## Background persistence
-
-**Enabled by default.** Starting a forward launches it under a detached,
-per-user background supervisor. Closing the tab, closing its window, quitting
-Windows Terminal, or a TUI crash does not stop those SSH connections. Reopening
-the app reconnects to the same supervisor and displays the active forwards.
-
-To stop a tunnel, select it and press Enter. `S` stops all tunnels. From a shell:
+## Something did not work?
 
 ```powershell
-.\.venv\Scripts\python.exe app.py --stop-all
-.\.venv\Scripts\python.exe app.py --stop-daemon
+.\doctor.ps1
 ```
 
-The second command also exits the background supervisor. A supervisor crash
-cleans up its owned SSH processes instead of leaving unmanaged tunnels behind.
+This prints local setup checks with next steps. It does not change settings or
+try to log in remotely. Python must be available to run the checks.
 
-Persistence here means **surviving the terminal closing**. Signing out or
-rebooting ends the processes; there is no Windows startup task. A lost SSH
-connection is reported as an error and can be restarted with Enter or `R`.
-Saved favorites remain on disk, but are never automatically started.
+| What you see | What to do next |
+| --- | --- |
+| No usable Python | Install Windows Python 3.12+, or pass its real executable with `-Python`. WSL Python cannot run this app. |
+| Existing environment is invalid | Restore its base Python, or rename `.venv` as a backup and rerun installation. |
+| Permission denied from SSH | Try `ssh YOUR_SSH_NAME` in PowerShell. Check the username, SSH key, and key agent. |
+| Server name cannot be found / timeout | Check the SSH name, network, and any VPN the server requires. |
+| Local port already in use | Press E and change the port on **this computer**; keep the remote app's port. |
+| ON but the page will not open | Confirm the remote app is running and using the expected port/protocol. |
 
-For temporary forwards that should stop when the UI closes:
+Only this computer can use the local listener (`127.0.0.1`). This does not
+publish your development app to the internet. Favorites live in
+`%LOCALAPPDATA%\PortForwardTUI\forwards.json`; keep that folder private.
+
+## Use it with a coding agent or script
+
+The same connections can be managed without opening the screen:
 
 ```powershell
-.\.venv\Scripts\python.exe app.py --stop-daemon
-.\.venv\Scripts\python.exe app.py --foreground
+.\doctor.ps1 --json
+.\ports.ps1 list --json
+.\ports.ps1 save --remote 8000 --name 'My web app' --json
+# Copy the returned id into the next command:
+.\ports.ps1 start FAVORITE_ID --json
+.\ports.ps1 stop FAVORITE_ID --json
+.\ports.ps1 delete FAVORITE_ID --yes --json
 ```
 
-## Configuration and SSH
+`save` keeps a stopped connection stopped. It can start the local background
+manager, which serializes edits from all screens and agents. Saving an existing
+mapping reuses its ID; a name change to an active favorite may restart it.
+`--local 18000` chooses a different port here. `start` waits up to five seconds
+for a listener; inspect the returned state, since a slow connection can still
+be `CONNECTING`. `--wait 0` returns immediately. `stop-all` affects every
+connection in the selected data folder.
 
-Favorites and the target live in `%LOCALAPPDATA%\PortForwardTUI\forwards.json`.
-The `keep_alive` setting defaults to `true`; set it to `false` to prefer
-foreground mode. Use `--data-dir PATH` for a separate set of favorites and an
-independent supervisor. Host selection is per data directory.
+Results contain `schema_version: 1` and `ok`. Exit codes are **0** for success,
+**1** for a failed check/operation, and **2** for invalid arguments. `list` and
+`doctor` do not create favorites or start the manager. `UNKNOWN` means live
+status was not available; it does not mean the tunnel has stopped.
+Use `--data-dir 'C:\path\to\separate-data'` for a separate set of connections.
+JSON can contain private host and favorite names; review it before sharing.
 
-To change targets, stop the supervisor and run `app.py --host NEW_ALIAS`.
-Aliases, usernames, ports, jump hosts, and keys are supplied through your normal
-OpenSSH configuration. Password-only login is not supported by background
-processes; encrypted private keys should be loaded into `ssh-agent`.
+An example request for your agent:
 
-Each tunnel binds **127.0.0.1 on your computer** and connects to **127.0.0.1 on
-the SSH host**. `ON` means the owned local listener exists; the target service
-still needs to be running remotely. These are TCP local forwards, not UDP,
-SOCKS proxies, or reverse forwards.
+> Read AGENTS.md and run doctor.ps1 --json. Explain any missing prerequisites.
+> My existing SSH name is YOUR_SSH_NAME. Install with -NonInteractive, then save
+> remote port 8000 as My web app. Start that favorite and report its state and
+> browser address. Preserve my other favorites and connections.
 
-The app uses `ssh -N -T -L`, strict host-key verification, keepalives, and
-`ExitOnForwardFailure`. It does not run remote commands. Errors appear below
-the selected favorite. The local supervisor accepts bounded JSON messages on
-loopback, authenticated with a random token stored in its local data directory.
-Treat that directory as private to your Windows account.
+Replace `YOUR_SSH_NAME` before using that request. Noninteractive setup reports
+missing information instead of asking a question in a background process.
 
-## Development
+## Contribute or explore further
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -v
-.\.venv\Scripts\python.exe app.py --check
-```
+See [AGENTS.md](AGENTS.md) for the code map and test commands. The
+[technical reference](REFERENCE.md) covers optional return shortcuts, per-window
+focus, foreground mode, persistence details and live SSH verification.
+The companion [timing report](https://github.com/brant92good/terminal-workspace/blob/main/docs/before-after.md)
+documents measured shortcut performance and its limits.
 
-Tests cover saved settings, keyboard flows, port conflicts, owned-process
-cleanup, background detachment, IPC authentication, concurrent shared views,
-conflicting edits, and Terminal registration.
-They do not require a reachable SSH server. To opt into a real transport check
-against an existing SSH alias (whose server listens on remote loopback port 22):
+Screenshots are generated from the running Textual interface by
+`scripts/capture_screenshots.py`, using simulated connections and no SSH access.
 
-```powershell
-.\.venv\Scripts\python.exe check_live.py --host workbox
-```
-
-This creates an isolated temporary forward, exits its initiating client,
-verifies traffic still crosses it, reconnects a new client, and explicitly
-cleans up. Your saved favorites are not changed.
-
-Some managed process environments (including GitHub-hosted Windows runners)
-prohibit breaking out of their process job. The app reports that restriction
-instead of claiming a tunnel will survive. Use a regular Windows Terminal
-session for background mode. CI still tests the real control server; it skips
-only the desktop detachment test when the runner explicitly denies breakaway.
-
-Implementation: Python, [Textual](https://textual.textualize.io/), Windows
-[process jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
-and [OpenSSH local forwarding](https://man.openbsd.org/ssh#L).
-
-## License
-
-[MIT](LICENSE).
+[MIT license](LICENSE).

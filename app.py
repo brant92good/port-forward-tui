@@ -21,6 +21,7 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Opt
 
 from forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, port, quick_ports, validate_host
 from focus_settings import SCOPES, SCOPE_LABELS, read_scope, save_scope
+from error_help import connection_help
 
 
 class Settings(ModalScreen[str | None]):
@@ -34,11 +35,11 @@ class Settings(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-dialog"):
             yield Static("SETTINGS", classes="dialog-title")
-            yield Label("Return-to-app shortcut: focus scope")
+            yield Label("When I return to the app, look for my last-used tab in:")
             yield OptionList(*SCOPE_LABELS, id="focus-scope")
             yield Static("Up / Down chooses. Enter saves. Esc cancels.\n"
-                         "Returns to the last-used view within this scope.\n"
-                         "If none exists there, a new view opens in the current window.", classes="muted")
+                         "This affects the Herdr and Ports return shortcuts.\n"
+                         "If no matching tab is found, a new one opens here.", classes="muted")
             yield Static("", id="settings-error", markup=False)
 
     def on_mount(self):
@@ -94,23 +95,31 @@ class EditForward(ModalScreen[Forward | None]):
     AUTO_FOCUS = "#local"
     BINDINGS = [Binding("escape", "cancel", "Cancel"), Binding("ctrl+s", "save", "Save", priority=True)]
 
-    def __init__(self, rule: Forward):
+    def __init__(self, rule: Forward, create=False):
         super().__init__()
         self.rule = rule
+        self.create = create
+        if create:
+            self.AUTO_FOCUS = "#remote"
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="edit-dialog"):
-            yield Label("EDIT SAVED FORWARD", classes="dialog-title")
-            yield Label("Name")
-            yield Input(self.rule.name, id="name", max_length=80)
-            yield Label("Remote port on the SSH host")
-            yield Input(str(self.rule.remote_port), id="remote", max_length=5)
-            yield Label("Local port on this computer (blank = same as remote)")
-            yield Input(str(self.rule.local_port), id="local", max_length=5)
-            yield Static("Enter or Ctrl+S saves. An active tunnel restarts with your changes.", classes="muted")
+            yield Label("ADD A CONNECTION" if self.create else "EDIT SAVED CONNECTION", classes="dialog-title")
+            if not self.create:
+                yield Label("Name")
+                yield Input(self.rule.name, id="name", max_length=80)
+            yield Label("Port used by the app on your REMOTE computer")
+            yield Input("" if self.create else str(self.rule.remote_port), placeholder="Example: 8000", id="remote", max_length=5)
+            yield Label("Port on THIS computer (leave blank to use the same number)")
+            yield Input("" if self.create else str(self.rule.local_port), id="local", max_length=5)
+            if self.create:
+                yield Label("Name (optional)")
+                yield Input("", placeholder="Example: My web app", id="name", max_length=80)
+            yield Static("Tab moves between fields. Enter or Ctrl+S " +
+                         ("saves and connects." if self.create else "saves; a connected favorite restarts."), classes="muted")
             yield Static("", id="edit-error", markup=False)
             with Horizontal(classes="buttons"):
-                yield Button("Save", variant="primary", id="save")
+                yield Button("Save and connect" if self.create else "Save", variant="primary", id="save")
                 yield Button("Cancel", id="cancel")
 
     def action_cancel(self):
@@ -142,16 +151,21 @@ class Help(ModalScreen):
         with VerticalScroll(id="help-dialog"):
             yield Static("""[bold cyan]PORT FORWARD TUI[/]
 
-[bold]Quick forward[/]
-Just type a number, then Enter. It is saved and started.
-  8000          local 8000 -> remote 8000
-  18000:8000    local 18000 -> remote 8000
+[bold]Open a remote app on this computer[/]
+A port is the number in an app address, such as 8000 in localhost:8000.
+This app connects a port here to an app on your remote computer using SSH.
+The remote app must already be running; this tool does not start it.
+
+Press A for a form, or type a number then Enter to save and connect.
+  8000          this computer 8000 -> remote computer 8000
+  18000:8000    this computer 18000 -> remote computer 8000
   8888 Jupyter  optional friendly name after a space
 
 [bold]Keyboard[/]
 Up / Down     Select a saved forward
 Enter / Space Start or stop the selected forward
 N             Focus the quick-forward box
+A             Add a connection using a form
 E             Edit name and ports (local port is selected)
 D             Delete a saved forward
 R             Restart the selected forward
@@ -162,7 +176,7 @@ Q / Ctrl+Q    Close the UI (background tunnels keep running)
 F2            Settings: return to a view here or across all Terminal windows
 ?             This help
 
-Favorites are saved automatically. Nothing starts automatically.
+Saved favorites reconnect only when you choose them.
 Background mode is ON by default: you may close the entire Terminal app.
 Reopen the UI to manage the same running tunnels. S explicitly stops all.
 Multiple views can attach at once; favorites and tunnel state stay in sync.
@@ -189,11 +203,12 @@ class PortApp(App):
     ENABLE_COMMAND_PALETTE = False
     CSS_PATH = "app.tcss"
     BINDINGS = [
-        Binding("n", "new_forward", "New"), Binding("e", "edit_forward", "Edit"),
+        Binding("a", "add_form", "Add"),
+        Binding("n", "new_forward", "Quick entry", show=False), Binding("e", "edit_forward", "Edit"),
         Binding("space", "toggle", "On / off"), Binding("d", "delete_forward", "Delete"),
-        Binding("r", "restart", "Restart"), Binding("b", "browser", "Browser"),
+        Binding("r", "restart", "Restart", show=False), Binding("b", "browser", "Browser"),
         Binding("s", "stop_all", "Stop all"), Binding("question_mark", "help", "Help"),
-        Binding("f2", "settings", "Settings"),
+        Binding("f2", "settings", "Settings", show=False),
         Binding("q", "request_quit", "Quit"),
         Binding("ctrl+q", "request_quit", "Quit", show=False, priority=True),
         Binding("ctrl+c", "request_quit", "Quit", show=False, priority=True),
@@ -212,15 +227,15 @@ class PortApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="main"):
-            yield Static(f"{self.store.host}   /   this PC -> SSH host", id="destination", markup=False)
-            yield Static("QUICK FORWARD", classes="section-label")
+            yield Static(f"Remote computer: {self.store.host}", id="destination", markup=False)
+            yield Static("CONNECT TO A REMOTE APP", classes="section-label")
             yield Input(placeholder="8000  or  18000:8000  [optional name]", id="quick", max_length=100, select_on_focus=False)
-            yield Static("Type a port + Enter to save and start. LOCAL:REMOTE changes the local port.", classes="muted", id="hint")
+            yield Static("Type the remote app's port + Enter, or press A for a form. ? explains ports.", classes="muted", id="hint")
             yield DataTable(id="forwards", cursor_type="row", zebra_stripes=True)
             yield Static("", id="summary", markup=False)
             yield Static("", id="details", markup=False)
             yield Static("Ready. Select a favorite and press Enter, or just type a port.", id="message", markup=False)
-            lifetime = ("BACKGROUND ON | Safe to close Terminal. S stops tunnels; Q closes this UI."
+            lifetime = ("Keeps running when Terminal closes. S stops connections; Q closes this screen."
                         if getattr(self.manager, "persistent", False)
                         else "FOREGROUND | Closing this window stops tunnels. Favorites stay saved.")
             yield Static(lifetime, classes="muted", id="lifetime")
@@ -228,8 +243,8 @@ class PortApp(App):
 
     def on_mount(self):
         table = self.query_one(DataTable)
-        for key, label, width in (("state", "STATE", 12), ("name", "SAVED FORWARD", 26),
-                                  ("local", "LOCAL", 8), ("arrow", "->", 3), ("remote", "REMOTE", 8)):
+        for key, label, width in (("state", "STATE", 12), ("name", "SAVED CONNECTION", 26),
+                                  ("local", "THIS PC", 8), ("arrow", "->", 3), ("remote", "REMOTE PC", 10)):
             table.add_column(label, key=key, width=width)
         self.populate()
         self.sync_favorites()
@@ -301,16 +316,19 @@ class PortApp(App):
         self.update_detail("summary", f"{active} active  /  {connecting} connecting  /  {len(self.store.forwards)} saved")
         rule = self.selected()
         if not rule:
-            message = "No saved forwards. Type a port to add your first one."
+            message = "No saved connections. Press A for a form, or type your remote app's port."
         elif self.manager.status(rule.id) == "ERROR":
-            message = self.manager.details(rule.id) or "SSH failed. Press Enter to retry."
+            details = self.manager.details(rule.id)
+            message = connection_help(details) + "\n" + details
         else:
-            message = f"{rule.name}:  127.0.0.1:{rule.local_port} -> {self.store.host}:127.0.0.1:{rule.remote_port}"
+            message = f"This computer: http://localhost:{rule.local_port}  ->  Remote app: port {rule.remote_port}"
             details = self.manager.details(rule.id)
             if details:
                 message += "\n" + details
             elif self.manager.status(rule.id) == "ON":
-                message += "\nTunnel listening. The service must be running on the remote port."
+                message += "\nPress B to open a web app. ON means the connection is listening; the remote app must also be running."
+            else:
+                message += "\nPress Enter to connect. The remote app must already be running."
         self.update_detail("details", message)
 
     def update_detail(self, widget_id: str, message: str):
@@ -387,6 +405,30 @@ class PortApp(App):
 
     def action_new_forward(self):
         self.query_one("#quick", Input).focus()
+
+    def action_add_form(self):
+        def added(rule: Forward | None):
+            if rule is None:
+                return
+            existing = next((r for r in self.store.forwards if
+                             (r.local_port, r.remote_port) == (rule.local_port, rule.remote_port)), None)
+            if existing:
+                rule = existing
+            if getattr(self.manager, "shared_favorites", False):
+                try:
+                    rule = self.manager.upsert(rule, expected=existing, start=True)
+                except OSError as error:
+                    self.say(str(error))
+                    return
+                self.sync_favorites(rule.id)
+            else:
+                if not existing and not self.save_rules(self.store.forwards + [rule]):
+                    return
+                self.manager.start(rule)
+            self.populate(rule.id)
+            self.say(f"Saved {rule.name}. Enter starts or stops this connection.")
+            self.tick()
+        self.push_screen(EditForward(Forward.make(8000, 8000), create=True), added)
 
     def action_list_focus(self):
         if self.screen is self.screen_stack[0]:
