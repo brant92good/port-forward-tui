@@ -6,6 +6,27 @@ listed conditions; they do not establish adoption or compatibility with every PC
 
 ## Automated checks
 
+The multi-machine update passed **71 local app tests** and the
+[Windows Python 3.12–3.14 CI matrix](https://github.com/brant92good/port-forward-tui/actions/runs/34224908603).
+The final picker appearance and import-selection checks also passed their
+12-test subset. Machine checks cover first launch without a host, manual add,
+keyboard import, Include/cycle handling without command execution, concurrent
+creation, legacy-file preservation, separate real local controllers, and
+explicit machine selection for ambiguous CLI writes.
+
+The actual noninteractive installer also completed with empty temporary app
+data, no host argument and profile registration disabled. It created no machine
+or connection. A machine-selected CLI forward with an explicit SSH login port
+carried real SSH traffic after the command exited; its test controller and
+forward were then stopped. Existing user favorites remained unchanged.
+
+Real Terminal checks verified routing between two machine profiles, including
+mixed-machine tabs. Both profiles reached the same physical SSH endpoint; this
+tests machine identity/routing, not availability of a second server. See the
+[companion desktop checks](https://github.com/brant92good/terminal-workspace/blob/main/docs/verification.md).
+
+Earlier release baseline:
+
 The [v0.4.0 CI run](https://github.com/brant92good/port-forward-tui/actions/runs/34201844088)
 completed successfully on Windows with Python 3.12, 3.13 and 3.14. The suite has
 58 test cases covering forms, favorites, CLI operations, malformed input,

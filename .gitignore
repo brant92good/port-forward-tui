@@ -5,6 +5,13 @@ __pycache__/
 *.bak
 endpoint.json
 forwards.json
+ui-settings.json
+views/
+window-views/
+machines/
+ssh-views/
+herdr-views/
+local-herdr-views/
 *.lock
 *.tmp
 artifacts/

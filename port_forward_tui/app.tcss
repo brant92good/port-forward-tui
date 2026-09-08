@@ -26,7 +26,11 @@ ModalScreen { align: center middle; background: #050910 75%; }
 .buttons { height: 3; margin-top: 1; align-horizontal: right; }
 .buttons Button { margin-left: 1; }
 #machine-picker { padding: 1 2; }
-#machines { height: 1fr; min-height: 4; }
+#machines { height: 1fr; min-height: 4; background: #101b2b; border: round #35506e; }
+#machines:focus, #import-hosts:focus { border: round #78e5d0; }
+#machine-search { background: #101e31; border: round #35506e; }
+#machine-search:focus { border: round #78e5d0; }
+OptionList > .option-list--highlighted { background: #255768; color: #ffffff; }
 #machine-form, #machine-import { width: 78; max-width: 95%; max-height: 95%; height: auto; padding: 1 2; border: round #78e5d0; background: #142237; }
 #import-hosts { height: 8; }
 #machine-error, #import-error { height: auto; color: #ff838b; }

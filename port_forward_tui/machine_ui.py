@@ -139,6 +139,7 @@ class MachinePicker(App[str | None]):
     def __init__(self, catalog: Catalog, purpose='Choose a machine to manage its ports'):
         super().__init__()
         self.catalog, self.purpose = catalog, purpose
+        self.theme = 'textual-dark'
         self.items = []
 
     def compose(self) -> ComposeResult:

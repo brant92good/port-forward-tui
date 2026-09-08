@@ -63,6 +63,7 @@ async def main():
         catalog.add('alex@lab.example.com', 'Lab workstation', 2222)
         picker = MachinePicker(catalog)
         async with picker.run_test(size=(104, 24)) as pilot:
+            picker.post_message(events.AppFocus())
             await pilot.pause()
             capture(picker, output / 'machines.svg', 'Choose a machine - example data')
         store = Store(Path(folder))
