@@ -32,15 +32,29 @@ Replace `workbox` with your SSH alias. The installer creates a private `.venv`,
 sets your target, and adds **Port Forward TUI** to the Windows Terminal dropdown.
 Keep the checkout in its installed location because the profile points to it.
 
+Setup tries `python.exe`, `py.exe`, then `python3.exe`, and validates Windows
+Python 3.12+ with SSL support before creating the environment. Select a specific
+installation with `-Python 'C:\path\to\python.exe'`. Conda users can activate
+their preferred environment for setup. Subsequent shortcuts launch the private
+environment by its absolute executable path, without activating Conda or loading
+a shell profile. Managed launches ignore `PYTHONHOME`, `PYTHONPATH`, and user
+site packages. Global Python packages and PATH are preserved. For tools exposing
+a script shim, pass the real Windows executable. WSL Python is not supported.
+
+A healthy existing `.venv` is reused, including when `-Python` is supplied.
+Keep its base Python installed. If validation fails after moving or removing
+that base, restore it or rename `.venv` as a backup and rerun setup. The
+installer reports the problem and preserves the existing directory.
+
 If your PowerShell policy prevents running the installer, run the equivalent
 commands directly:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe build_focus_helper.py
-.\.venv\Scripts\python.exe app.py --host workbox --check
-.\.venv\Scripts\python.exe terminal_profile.py
+python -I -m venv .venv
+.\.venv\Scripts\python.exe -E -s -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -E -s build_focus_helper.py
+.\.venv\Scripts\python.exe -E -s app.py --host workbox --check
+.\.venv\Scripts\python.exe -E -s terminal_profile.py
 ```
 
 Launch from the dropdown or with:
@@ -58,7 +72,7 @@ a backup. For JSONC settings with comments, add a profile manually in Terminal
 Settings with this command line (adjust the checkout path):
 
 ```text
-"C:\path\port-forward-tui\.venv\Scripts\python.exe" "C:\path\port-forward-tui\app.py"
+"C:\path\port-forward-tui\.venv\Scripts\python.exe" -E -s "C:\path\port-forward-tui\app.py"
 ```
 
 ## Multiple views and a return-to-app shortcut

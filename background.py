@@ -42,7 +42,7 @@ def launch_daemon(directory: Path):
     directory.mkdir(parents=True, exist_ok=True)
     # The daemon needs only the standard library. Avoid the Windows venv launcher.
     executable = getattr(sys, "_base_executable", sys.executable)
-    command = [executable, str(Path(__file__).resolve()), "--serve", "--data-dir", str(directory.resolve())]
+    command = [executable, "-E", "-s", str(Path(__file__).resolve()), "--serve", "--data-dir", str(directory.resolve())]
     flags = (subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
              | subprocess.CREATE_BREAKAWAY_FROM_JOB)
     log_path = directory / "background.log"

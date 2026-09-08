@@ -35,7 +35,7 @@ def main():
     profiles = data.setdefault("profiles", {}).setdefault("list", [])
     found = next((p for p in profiles if p.get("guid") == guid), None)
     profile = {"guid": guid, "name": options.name,
-               "commandline": subprocess.list2cmdline([str(python), str(root / "app.py")]),
+               "commandline": subprocess.list2cmdline([str(python), "-E", "-s", str(root / "app.py")]),
                "startingDirectory": "%USERPROFILE%", "icon": "\U0001f50c",
                "hidden": False, "closeOnExit": "automatic"}
     if found is None:
@@ -47,7 +47,7 @@ def main():
         for binding in data.get("keybindings", []):
             if binding.get("keys") == options.focus_shortcut and binding.get("id") != action_id:
                 raise SystemExit("That shortcut is already assigned. Settings were not changed.")
-        command = subprocess.list2cmdline([str(python), str(root / "app.py"), "--focus-existing"])
+        command = subprocess.list2cmdline([str(python), "-E", "-s", str(root / "app.py"), "--focus-existing"])
         action = {"id": action_id, "command": {"action": "newTab", "profile": guid, "commandline": command}}
         actions = data.setdefault("actions", [])
         previous = next((a for a in actions if a.get("id") == action_id), None)
