@@ -13,7 +13,7 @@ from views import ViewRegistration, focus_existing
 
 class PreferenceTests(unittest.TestCase):
     def setUp(self):
-        helper = patch("views.focus_command", return_value=["FocusHelper.exe"])
+        helper = patch("views.focus_command", return_value=["powershell.exe", "-File", "focus_existing.ps1"])
         helper.start()
         self.addCleanup(helper.stop)
 

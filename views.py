@@ -48,6 +48,51 @@ def delayed_focus(command: list[str]) -> bool:
         return False
 
 
+def native_focus(command: list[str]) -> bool:
+    """One detached helper probes, signals a match, then completes the handoff."""
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel.CreateEventW.restype = wintypes.HANDLE
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.WaitForMultipleObjects.argtypes = [wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE), wintypes.BOOL, wintypes.DWORD]
+    kernel.WaitForMultipleObjects.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    name = "Local\\PortsFocus-" + uuid.uuid4().hex
+    ready = kernel.CreateEventW(None, True, False, name)
+    if not ready:
+        return False
+    handle = None
+    process = None
+    try:
+        process = subprocess.Popen([*command, "-ReadyEvent", name, "-AfterPid", str(os.getpid())],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_BREAKAWAY_FROM_JOB)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.AllowSetForegroundWindow.argtypes = [wintypes.DWORD]
+        user32.AllowSetForegroundWindow(process.pid)
+        handle = kernel.OpenProcess(0x100000, False, process.pid)
+        if not handle:
+            return False
+        handles = (wintypes.HANDLE * 2)(ready, handle)
+        # A match wakes immediately. No match exits the child; a stalled lookup
+        # is bounded and cannot select a tab after the fallback view opens.
+        if kernel.WaitForMultipleObjects(2, handles, False, 5000) == 0:
+            return True
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=2)
+        return False
+    except (OSError, subprocess.TimeoutExpired):
+        if process and process.poll() is None:
+            process.kill()
+        return False
+    finally:
+        if handle:
+            kernel.CloseHandle(handle)
+        kernel.CloseHandle(ready)
+
+
 def process_alive(pid: int) -> bool:
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -128,6 +173,8 @@ def focus_existing(directory: Path, probe_only: bool = False) -> bool:
             command.extend(["-OriginTitle", origin_title])
         except OSError:
             return False
+    if not probe_only and len(executable) == 1:
+        return native_focus(command)
     command.append("-ProbeOnly")
     try:
         result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,

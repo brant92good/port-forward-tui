@@ -95,6 +95,13 @@ public static class FocusHelper {
         return false;
     }
 
+    static bool WaitForParent(string pid) {
+        try {
+            using (var parent = Process.GetProcessById(Int32.Parse(pid)))
+                return parent.WaitForExit(5000);
+        } catch (ArgumentException) { return true; }
+    }
+
     [STAThread]
     public static int Main(string[] arguments) {
         try {
@@ -105,7 +112,7 @@ public static class FocusHelper {
             }
             string value;
             var titles = Json.Deserialize<string[]>(Encoding.UTF8.GetString(Convert.FromBase64String(options["-TitlesBase64"])));
-            if (options.ContainsKey("-ProbeOnly")) {
+            if (options.ContainsKey("-ProbeOnly") || options.ContainsKey("-ReadyEvent")) {
                 var tabs = Tabs();
                 long origin = 0;
                 if (options.TryGetValue("-OriginTitle", out value)) {
@@ -118,6 +125,15 @@ public static class FocusHelper {
                 foreach (string title in titles) {
                     var target = tabs.FirstOrDefault(t => t.title == title && (!local || t.window == origin));
                     if (target == null) continue;
+                    if (options.TryGetValue("-ReadyEvent", out value)) {
+                        if (origin == 0 || !Allowed(origin, target.window)) return 1;
+                        // Let the Python launcher exit, then finish in this same
+                        // process instead of starting a second focus helper.
+                        using (var ready = EventWaitHandle.OpenExisting(value)) ready.Set();
+                        if (!WaitForParent(options["-AfterPid"])) return 1;
+                        if (!WaitForClosedTab(origin, target.window, options["-OriginTitle"])) return 1;
+                        return Activate(target.window, origin, target.title) ? 0 : 1;
+                    }
                     Console.OutputEncoding = new UTF8Encoding(false);
                     Console.WriteLine(Json.Serialize(new { title = title, window = target.window, origin = origin }));
                     return 0;
@@ -128,10 +144,7 @@ public static class FocusHelper {
             long invokeWindow = Int64.Parse(options["-InvokeWindow"]);
             if (invokeWindow == 0 || titles.Length != 1) return 1;
             if (options.TryGetValue("-AfterPid", out value)) {
-                try {
-                    using (var parent = Process.GetProcessById(Int32.Parse(value)))
-                        if (!parent.WaitForExit(5000)) return 1;
-                } catch (ArgumentException) { }
+                if (!WaitForParent(value)) return 1;
             }
             options.TryGetValue("-ClosedTitle", out value);
             if (!WaitForClosedTab(invokeWindow, windowHandle, value)) return 1;
