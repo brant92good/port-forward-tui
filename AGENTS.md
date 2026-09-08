@@ -29,6 +29,7 @@ connection; a background process owns it so closing the screen does not stop it.
 - `port_forward_tui/cli.py` / `port_forward_tui/diagnostics.py`: headless commands and local checks.
 - `port_forward_tui/forwarding.py`: file schema, SSH arguments, owned Windows process jobs.
 - `port_forward_tui/machines.py`, `machine_ui.py`: independent machine catalog, keyboard picker and opt-in SSH import.
+- `port_forward_tui/connections.py`, `all_machines_ui.py`: combined server list, asynchronous local status reads and routing to separate controllers. UI row IDs are namespaced; persisted/CLI favorite IDs are unchanged.
 - `port_forward_tui/window_context.py`: resolve the invoking window's machine before choosing a return target.
 - `port_forward_tui/background.py`: authenticated local control server and serialized writes.
 - `port_forward_tui/launch.py`, `port_forward_tui/views.py`, `native/FocusHelper.cs`: lightweight return shortcut.
@@ -39,6 +40,13 @@ favorite edits through the server. Never infer an SSH connection from a UI row
 alone or claim persistence across reboot. Don't kill unrelated processes, use
 real favorites in tests, or publish endpoint.json, SSH keys, hosts or private
 paths. Use isolated `--data-dir` folders and explicit cleanup.
+
+Started connections retry recoverable failures with bounded delays. RETRYING
+still means requested ON: stop, stop-all, delete and editing must cancel or
+replace pending attempts. OFF favorites never start automatically. Keep strict
+host-key checking and do not loop on authentication, host-key or local-port
+conflicts. `restart-manager --machine ID` is an explicit controller upgrade that
+briefly interrupts then restores requested connections; old views need reopening.
 
 ## Verification and shipping
 

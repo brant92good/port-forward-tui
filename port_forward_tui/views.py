@@ -154,6 +154,22 @@ class ViewRegistration:
             self.data['window'] = foreground_window()
         self.touch()
 
+    def select_machine(self, machine):
+        """Retarget this tab without another helper process or window lookup."""
+        previous = self.path
+        self.directory = machine.directory / 'views'
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.path = self.directory / previous.name
+        self.title = f'Ports | {machine.target} | {self.path.stem[:6]}'
+        self.data.update(title=self.title, machine=machine.id)
+        if sys.stdout.isatty():
+            kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel.SetConsoleTitleW.argtypes = [wintypes.LPCWSTR]
+            kernel.SetConsoleTitleW(self.title)
+        self.touch()
+        if previous != self.path:
+            previous.unlink(missing_ok=True)
+
     def close(self):
         self.path.unlink(missing_ok=True)
         if self.context_path:

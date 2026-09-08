@@ -84,7 +84,7 @@ This sets policy for that invocation, not for the whole computer.
 ## Open your first remote app
 
 1. Make sure the app is running on the **remote** computer. Suppose it uses port 8000.
-2. In Port Forward TUI, press **Esc**, then **A**. Enter `8000` in the remote-port field.
+2. Select a row for the intended server (shown beside **Add to**), then press **Esc**, **A**. Enter `8000` in the remote-port field.
 3. Leave the port on this computer blank to use the same number, then press **Enter**.
 4. When the row shows **ON**, press **B** to open the local HTTP address in your browser.
 
@@ -111,13 +111,17 @@ or another protocol, use the appropriate URL or client yourself.
 | B / R | Open its HTTP address / restart its connection |
 | N / Escape | Jump to quick entry / return to the list |
 | Q | Close this screen; background connections continue |
-| S | Stop all connections; favorites stay saved |
+| S | Stop all listed servers' connections and retries; favorites stay saved |
 | F2 / ? | Shortcut settings / help |
 
-Press Esc then H to choose another machine; existing background forwards continue.
+The main list groups all saved machines by server. Press Esc then H to add/import
+machines or select one; existing background forwards continue.
 Starter favorites are examples and begin OFF. Edit or delete them freely.
-Multiple open screens share favorites and connection state. Reboot, sign-out,
-or a lost SSH connection ends running tunnels; favorites remain saved.
+Multiple open screens share favorites and connection state. Started forwards
+retry network failures automatically, including after Wi-Fi or VPN returns.
+RETRYING means another attempt is scheduled; Enter stops it and R retries now.
+Login, host-key and occupied local-port errors need your attention. Reboot or
+sign-out ends running tunnels; favorites remain saved and OFF next time.
 
 ## Something did not work?
 

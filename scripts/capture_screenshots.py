@@ -10,27 +10,12 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from port_forward_tui.ui import PortApp
 from textual import events
 from port_forward_tui.forwarding import Forward, Store
 from port_forward_tui.machines import Catalog
 from port_forward_tui.machine_ui import MachinePicker
-
-
-class DemoConnections:
-    persistent = True
-
-    def __init__(self, rules):
-        self.running = {r.id: r for r in rules[:2]}
-
-    def status(self, key):
-        return 'ON' if key in self.running else 'OFF'
-
-    def poll(self):
-        pass
-
-    def details(self, key):
-        return ''
+from port_forward_tui.connections import MultiMachineManager
+from port_forward_tui.all_machines_ui import AllMachinesApp
 
 
 def capture(app, path, title):
@@ -59,19 +44,25 @@ async def main():
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='ports-screenshot-') as folder:
         catalog = Catalog(Path(folder) / 'demo-machines')
-        catalog.add('workbox', 'Development server')
-        catalog.add('alex@lab.example.com', 'Lab workstation', 2222)
+        development = catalog.add('workbox', 'Development')
+        lab = catalog.add('alex@lab.example.com', 'Lab', 2222)
         picker = MachinePicker(catalog)
         async with picker.run_test(size=(104, 24)) as pilot:
             picker.post_message(events.AppFocus())
             await pilot.pause()
             capture(picker, output / 'machines.svg', 'Choose a machine - example data')
-        store = Store(Path(folder))
-        store.host = 'demo-server'
-        store.forwards = [Forward.make(8000, 8000, 'My web app'),
-                          Forward.make(18888, 8888, 'Jupyter notebook'),
-                          Forward.make(3000, 3000, 'Project preview')]
-        app = PortApp(store, DemoConnections(store.forwards))
+        for machine, rules in [(development, [Forward.make(8000, 8000, 'My web app'), Forward.make(3000, 3000, 'Project preview')]),
+                               (lab, [Forward.make(18888, 8888, 'Jupyter notebook'), Forward.make(18000, 8000, 'Training API')])]:
+            store = Store(machine.directory)
+            store.load()
+            store.save(rules)
+        manager = MultiMachineManager(catalog, development)
+        # Example state only. Do not start a controller or contact SSH.
+        manager.next_poll = manager.next_catalog = float('inf')
+        for key, states in [(development.id, ['ON', 'OFF']), (lab.id, ['ON', 'RETRYING'])]:
+            entry = manager.entries[key]
+            entry.states = dict(zip((r.id for r in entry.store.forwards), states))
+        app = AllMachinesApp(manager, catalog)
         async with app.run_test(size=(104, 28)) as pilot:
             app.post_message(events.AppFocus())
             await pilot.press('down', 'up')
@@ -86,6 +77,7 @@ async def main():
             await pilot.press('f2')
             await pilot.pause()
             capture(app, output / 'settings.svg', 'Choose where shortcuts return')
+        manager.detach()
     print('Captured actual UI screens with simulated example data in docs/screenshots.')
 
 

@@ -13,16 +13,23 @@ def run_view(machine, catalog, foreground=False, app_factory=None):
         store = Store(machine.directory)
         store.load()
         if store.keep_alive and not foreground:
-            from port_forward_tui.background import DaemonClient
-            manager = DaemonClient(store.host, store.directory)
+            if app_factory is None:
+                from port_forward_tui.connections import MultiMachineManager
+                from port_forward_tui.all_machines_ui import AllMachinesApp
+                manager = MultiMachineManager(catalog, machine)
+                application = AllMachinesApp(manager, catalog)
+            else:
+                from port_forward_tui.background import DaemonClient
+                manager = DaemonClient(store.host, store.directory)
         else:
             lock = InstanceLock(store.directory)
             daemon_lock = InstanceLock(store.directory, 'daemon.lock')
             manager = TunnelManager(store.host, store.directory)
-        if app_factory is None:
-            from port_forward_tui.ui import PortApp
-            app_factory = PortApp
-        application = app_factory(store, manager)
+        if not (store.keep_alive and not foreground and app_factory is None):
+            if app_factory is None:
+                from port_forward_tui.ui import PortApp
+                app_factory = PortApp
+            application = app_factory(store, manager)
         if getattr(manager, 'persistent', False):
             from port_forward_tui.views import ViewRegistration
             registration = ViewRegistration(store.directory, store.host, catalog_root=catalog.root, machine=machine.id)
@@ -33,6 +40,8 @@ def run_view(machine, catalog, foreground=False, app_factory=None):
             registration.close()
         if manager and not getattr(manager, 'persistent', False):
             manager.close()
+        elif manager and hasattr(manager, 'detach'):
+            manager.detach()
         if daemon_lock:
             daemon_lock.close()
         if lock:
@@ -76,7 +85,9 @@ def main(app_factory=None):
                 print(f'OK: {machine.target}; {len(store.forwards)} saved forwards; {store.path}')
             return 0
         from port_forward_tui.window_context import choose_machine
-        machine = choose_machine(catalog, selector, picker=options.machines)
+        saved = catalog.list()
+        machine = (saved[0] if saved and not selector and not options.machines and not options.focus_existing
+                   else choose_machine(catalog, selector, picker=options.machines))
         if machine and options.focus_existing and not options.foreground:
             from port_forward_tui.views import focus_existing
             if focus_existing(machine.directory):
@@ -85,7 +96,7 @@ def main(app_factory=None):
             result = run_view(machine, catalog, options.foreground, app_factory)
             if result != 'pick-machine':
                 break
-            machine = choose_machine(catalog, picker=True)
+            machine = choose_machine(catalog, picker=True) or machine
         return 0
     except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
         print(f'Port manager: {error}', file=sys.stderr)

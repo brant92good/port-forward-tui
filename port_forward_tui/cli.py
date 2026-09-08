@@ -40,6 +40,7 @@ def arguments(argv):
             command.add_argument('--select', action='append', help='Import this alias only; repeat for multiple names')
     for name, help_text in [('doctor', 'Check this computer without changing it or contacting SSH'),
                             ('list', 'Read saved connections and any available live status'),
+                            ('restart-manager', 'Load an app update; briefly interrupt and restore this machine\'s requested connections'),
                             ('stop-all', 'Stop every connection in this data folder')]:
         commands.add_parser(name, help=help_text, parents=[shared])
     save = commands.add_parser('save', help='Save a favorite without opening a connection', parents=[shared])
@@ -137,6 +138,10 @@ def execute(options):
         raise ValueError('Add a machine first: .\\ports.ps1 machines add YOUR_SSH_NAME. Installation does not require a host.')
     if not store.keep_alive:
         raise ValueError('These commands use background mode. This data folder is set to foreground mode; use its TUI.')
+    if options.command == 'restart-manager':
+        from port_forward_tui.background import restart_daemon
+        restored = restart_daemon(store.directory)
+        return dict(ok=True, **listing(store), restored_ids=restored)
     if options.command in ('start', 'stop', 'delete'):
         rule = next((r for r in store.forwards if r.id == options.id), None)
         if rule is None:

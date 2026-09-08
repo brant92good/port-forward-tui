@@ -205,8 +205,9 @@ time.sleep(60)
                     child.kill()
                     child.wait()
                     manager.poll()
-                    self.assertEqual(manager.status(rule.id), "ERROR")
+                    self.assertEqual(manager.status(rule.id), "RETRYING")
                     self.assertFalse(manager.running)
+                    self.assertIn(rule.id, manager.wanted)
             finally:
                 manager.close()
 

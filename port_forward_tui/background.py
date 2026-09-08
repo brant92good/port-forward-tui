@@ -18,17 +18,17 @@ import time
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from port_forward_tui.forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, port, validate_host
+from port_forward_tui.forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, port, validate_host, requested
 
 PROTOCOL = 1
 MAX_RESPONSE = 2 * 1024 * 1024
 
 
-def exchange(directory: Path, command: str, **arguments) -> dict:
+def exchange(directory: Path, command: str, *, timeout=5, **arguments) -> dict:
     endpoint = json.loads((directory / "endpoint.json").read_text(encoding="utf-8"))
     request = {"token": endpoint["token"], "protocol": PROTOCOL, "command": command, **arguments}
-    with socket.create_connection(("127.0.0.1", endpoint["port"]), timeout=2) as connection:
-        connection.settimeout(5)
+    with socket.create_connection(("127.0.0.1", endpoint["port"]), timeout=min(2, timeout)) as connection:
+        connection.settimeout(timeout)
         connection.sendall(json.dumps(request).encode("utf-8") + b"\n")
         with connection.makefile("rb") as response:
             raw = response.readline(MAX_RESPONSE + 1)
@@ -80,6 +80,28 @@ def ensure_daemon(directory: Path) -> dict:
         process.poll()
 
 
+def restart_daemon(directory: Path):
+    """Explicit upgrade: briefly stop this controller, then restore its ON requests."""
+    from port_forward_tui.views import process_alive
+    try:
+        snapshot = exchange(directory, 'status')
+    except FileNotFoundError:
+        ensure_daemon(directory)
+        return []
+    wanted = [r['id'] for r in snapshot['forwards']
+              if snapshot['states'].get(r['id']) in ('ON', 'CONNECTING', 'RETRYING')]
+    exchange(directory, 'shutdown')
+    deadline = time.monotonic() + 8
+    while process_alive(snapshot['pid']) and time.monotonic() < deadline:
+        time.sleep(.05)
+    if process_alive(snapshot['pid']):
+        raise OSError('The old background manager has not exited. It was not force-killed; retry after it exits.')
+    ensure_daemon(directory)
+    for rule_id in wanted:
+        exchange(directory, 'start', rule_id=rule_id)
+    return wanted
+
+
 class DaemonClient:
     persistent = True
 
@@ -106,6 +128,7 @@ class DaemonClient:
         self.states = result["states"]
         self.logs = result["details"]
         self.shared_favorites = "shared_favorites" in result.get("capabilities", [])
+        self.auto_reconnect = 'auto_reconnect' in result.get('capabilities', [])
         self.forwards = [Forward(**row) for row in result.get("forwards", [])]
 
     def _call(self, command: str, **arguments):
@@ -124,9 +147,10 @@ class DaemonClient:
         try:
             self._call("status")
         except (OSError, ValueError, KeyError) as error:
-            for rule_id in self.running:
-                self.states[rule_id] = "ERROR"
-                self.logs[rule_id] = "Background manager disconnected. Reopen the app to reconnect."
+            for rule_id in self.states:
+                if requested(self, rule_id):
+                    self.states[rule_id] = "ERROR"
+                    self.logs[rule_id] = "Background manager disconnected. Reopen the app to reconnect."
             self.running = {}
             raise OSError(str(error)) from error
 
@@ -161,7 +185,7 @@ class Supervisor:
     def snapshot(self):
         return {"ok": True, "protocol": PROTOCOL, "pid": os.getpid(), "host": self.manager.host,
                 "ssh_port": getattr(self.manager, 'ssh_port', None), "ssh_config": getattr(self.manager, 'ssh_config', None),
-                "capabilities": ["shared_favorites"], "forwards": [asdict(r) for r in self.store.forwards],
+                "capabilities": ["shared_favorites", "auto_reconnect"], "forwards": [asdict(r) for r in self.store.forwards],
                 "running": list(self.manager.running), "states": dict(self.manager.states),
                 "details": {key: self.manager.details(key)[-6000:] for key in self.manager.states}}
 
@@ -211,7 +235,7 @@ class Supervisor:
                     if current is None:
                         updated.append(rule)
                     self.store.save(updated)
-                    if current and current != rule and rule.id in self.manager.running:
+                    if current and current != rule and requested(self.manager, rule.id):
                         self.manager.stop(rule.id)
                         self.manager.start(rule)
                 if request.get("start") is True:

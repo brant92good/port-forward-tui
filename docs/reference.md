@@ -9,9 +9,10 @@ session, with shared favorites and tunnel state.
   QUICK FORWARD
   8000  or  18000:8000  [optional name]
 
-  STATE         SAVED FORWARD           LOCAL   ->  REMOTE
-  ON            API / dev server        8000    ->  8000
-  OFF           Jupyter                 8888    ->  8888
+  SERVER        STATE       SAVED FORWARD       LOCAL   ->  REMOTE
+  Development   ON          API                 8000   ->  8000
+  Lab           ON          Jupyter            18888   ->  8888
+  Lab           RETRYING    Training API       18000   ->  8000
 
   BACKGROUND ON | Safe to close Terminal. S stops tunnels; Q closes this UI.
 ```
@@ -120,10 +121,11 @@ Terminal's accessibility interface and application titles, so keep application
 titles enabled for this profile. A manually renamed tab may open a new view
 instead. Foreground mode supports one view at a time.
 
-When upgrading from v0.1.0, close older Ports views, run
-`.\.venv\Scripts\python.exe app.py --stop-daemon` once, then reopen the app.
-That one-time supervisor restart stops active tunnels; select their saved
-favorites to start them again.
+When upgrading, close older Ports views and run
+`ports.ps1 restart-manager --machine MACHINE_ID` for each running machine.
+This loads the current controller after briefly stopping that machine's
+forwards, then restores ON/connecting/retrying requests. OFF favorites remain
+OFF. Reopen the screen to load its new code too.
 
 ## Keyboard
 
@@ -136,11 +138,12 @@ favorites to start them again.
 | Up / Down | Select a saved forward |
 | Enter / Space | Start or stop the selected forward |
 | `N` | Focus quick entry |
+| `A` / `H` | Add a connection for the selected server / manage machines |
 | `E` | Edit the name or ports; the local port is selected immediately |
 | `D` | Delete a favorite (with confirmation) |
 | `R` | Restart the selected forward |
 | `B` | Open the selected active local HTTP URL |
-| `S` | Explicitly stop all tunnels |
+| `S` | Stop every listed server's tunnels and pending retries |
 | Escape | Return to the saved list |
 | `Q` / Ctrl+Q | Close the UI; background tunnels continue |
 | `?` | Show help |
@@ -159,17 +162,33 @@ the app reconnects to the same supervisor and displays the active forwards.
 To stop a tunnel, select it and press Enter. `S` stops all tunnels. From a shell:
 
 ```powershell
-.\.venv\Scripts\python.exe app.py --stop-all
-.\.venv\Scripts\python.exe app.py --stop-daemon
+.\.venv\Scripts\python.exe app.py --stop-all --machine MACHINE_ID
+.\.venv\Scripts\python.exe app.py --stop-daemon --machine MACHINE_ID
 ```
 
 The second command also exits the background supervisor. A supervisor crash
 cleans up its owned SSH processes instead of leaving unmanaged tunnels behind.
 
 Persistence here means **surviving the terminal closing**. Signing out or
-rebooting ends the processes; there is no Windows startup task. A lost SSH
-connection is reported as an error and can be restarted with Enter or `R`.
-Saved favorites remain on disk, but are never automatically started.
+rebooting ends the processes; there is no Windows startup task. A started
+connection interrupted by network loss enters RETRYING. Attempts wait 2, 4,
+8, 16, then at most 30 seconds; 30 seconds of stable ON state resets the delay.
+Enter stops pending retries, R retries immediately, and S stops all servers.
+Authentication/host-key failures and local-port conflicts require intervention.
+OFF favorites remain on disk without being automatically started.
+
+SSH probes an unresponsive connection using ServerAliveInterval=15 and
+ServerAliveCountMax=3. Detection can take roughly 45 seconds without responses,
+before retry and login time; suspend and OS scheduling can add delay. See
+[OpenSSH's keepalive settings](https://man.openbsd.org/ssh_config#ServerAliveCountMax).
+Reconnection creates a new transport, so browser/database clients may need to
+retry their own requests. It does not resume an in-flight TCP stream.
+
+The combined view reads separate machine controllers asynchronously. A slow or
+unavailable controller shows UNKNOWN while other server rows remain usable.
+The selected row's server determines quick-entry destination and Terminal
+remote-shortcut context. Favorite IDs stored on disk and returned by the CLI
+are unchanged; only internal table identities include the machine ID.
 
 For temporary forwards that should stop when the UI closes:
 

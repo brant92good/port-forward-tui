@@ -244,6 +244,12 @@ class Running:
     job: ProcessJob
     started: float
     reader: threading.Thread | None = None
+    connected: float | None = None
+
+
+def requested(manager, rule_id: str) -> bool:
+    """An interrupted connection still belongs to the user's current ON request."""
+    return manager.status(rule_id) in ('ON', 'CONNECTING', 'RETRYING')
 
 
 class TunnelManager:
@@ -258,6 +264,9 @@ class TunnelManager:
         self.states: dict[str, str] = {}
         self.logs: dict[str, deque[str]] = {}
         self.log_lock = threading.Lock()
+        self.wanted: dict[str, Forward] = {}
+        self.retries: dict[str, float] = {}
+        self.attempts: dict[str, int] = {}
 
     def log(self, rule_id: str, message: str):
         with self.log_lock:
@@ -265,7 +274,11 @@ class TunnelManager:
 
     def details(self, rule_id: str) -> str:
         with self.log_lock:
-            return "\n".join(self.logs.get(rule_id, ()))
+            message = "\n".join(self.logs.get(rule_id, ()))
+        if rule_id in self.retries:
+            seconds = max(0, int(self.retries[rule_id] - time.monotonic() + .999))
+            message += f"\nNetwork connection interrupted. Retrying in {seconds}s. Enter stops retries; R retries now."
+        return message
 
     def _read_errors(self, rule_id: str, process: subprocess.Popen):
         try:
@@ -275,14 +288,21 @@ class TunnelManager:
             process.stderr.close()
 
     def start(self, rule: Forward):
-        if rule.id in self.running:
+        if requested(self, rule.id):
             return
+        self.wanted[rule.id] = rule
+        self.attempts.pop(rule.id, None)
+        self._start(rule)
+
+    def _start(self, rule: Forward):
+        self.retries.pop(rule.id, None)
         self.states[rule.id] = "ERROR"
         with self.log_lock:
             self.logs[rule.id] = deque(maxlen=60)
         for other in self.running.values():
             if other.rule.local_port == rule.local_port:
                 self.log(rule.id, f"Local port {rule.local_port} is used by {other.rule.name}. Press E to change the local port.")
+                self.wanted.pop(rule.id, None)
                 return
         try:
             with socket.socket() as probe:
@@ -290,6 +310,7 @@ class TunnelManager:
                 probe.bind(("127.0.0.1", rule.local_port))
         except OSError:
             self.log(rule.id, f"Local port {rule.local_port} is already in use or unavailable. Press E to choose another local port.")
+            self.wanted.pop(rule.id, None)
             return
         process = job = None
         try:
@@ -314,6 +335,29 @@ class TunnelManager:
                 if process.stderr:
                     process.stderr.close()
             self.log(rule.id, str(error))
+            self.wanted.pop(rule.id, None)
+
+    def _failed(self, rule: Forward, reason: str):
+        self.log(rule.id, reason)
+        details = self.details(rule.id).lower()
+        permanent = ('permission denied', 'host key verification failed',
+                     'remote host identification has changed', 'bad configuration option',
+                     'bad owner or permissions', 'no such identity', 'unknown option',
+                     'bad port', 'could not open user configuration file',
+                     'cannot listen to port', 'address already in use',
+                     'administratively prohibited')
+        if any(text in details for text in permanent):
+            self.states[rule.id] = 'ERROR'
+            self.wanted.pop(rule.id, None)
+            self.log(rule.id, 'Fix the SSH or local-port error, then press Enter to retry.')
+            return
+        if rule.id not in self.wanted:
+            return
+        attempt = self.attempts.get(rule.id, 0)
+        delay = min(30, 2 ** min(attempt + 1, 5))
+        self.attempts[rule.id] = attempt + 1
+        self.retries[rule.id] = time.monotonic() + delay
+        self.states[rule.id] = 'RETRYING'
 
     def _dispose(self, running: Running):
         running.job.close()
@@ -326,29 +370,43 @@ class TunnelManager:
             running.reader.join(timeout=1)
 
     def poll(self):
-        owned = listeners() if self.running else set()
+        try:
+            owned = listeners() if self.running else set()
+        except OSError:
+            # A transient Windows TCP-table error must not kill the supervisor
+            # or turn every wanted connection off during a resume.
+            owned = None
         for rule_id, running in list(self.running.items()):
             code = running.process.poll()
             if code is not None:
                 self._dispose(running)
                 del self.running[rule_id]
-                self.states[rule_id] = "ERROR"
-                self.log(rule_id, f"SSH disconnected (exit {code}). Select this row and press Enter to retry.")
-            elif (running.process.pid, running.rule.local_port) in owned:
+                self._failed(running.rule, f"SSH disconnected (exit {code}).")
+            elif owned is not None and (running.process.pid, running.rule.local_port) in owned:
                 self.states[rule_id] = "ON"
-            elif time.monotonic() - running.started > 20:
-                self.stop(rule_id)
-                self.states[rule_id] = "ERROR"
-                self.log(rule_id, "Connection timed out. Check the SSH host and Tailscale connection, then press Enter to retry.")
+                if running.connected is None:
+                    running.connected = time.monotonic()
+                elif time.monotonic() - running.connected >= 30:
+                    self.attempts.pop(rule_id, None)
+            elif owned is not None and time.monotonic() - running.started > 20:
+                self._dispose(running)
+                del self.running[rule_id]
+                self._failed(running.rule, 'Connection timed out. Waiting for the network or SSH server to recover.')
+        for rule_id, deadline in list(self.retries.items()):
+            if time.monotonic() >= deadline and rule_id in self.wanted:
+                self._start(self.wanted[rule_id])
 
     def stop(self, rule_id: str):
+        self.wanted.pop(rule_id, None)
+        self.retries.pop(rule_id, None)
+        self.attempts.pop(rule_id, None)
         running = self.running.pop(rule_id, None)
         if running:
             self._dispose(running)
         self.states[rule_id] = "OFF"
 
     def close(self):
-        for rule_id in list(self.running):
+        for rule_id in set(self.running) | set(self.wanted) | set(self.retries):
             self.stop(rule_id)
 
     def status(self, rule_id: str) -> str:

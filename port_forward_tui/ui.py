@@ -19,7 +19,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, OptionList, Static
 
-from port_forward_tui.forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, port, quick_ports, validate_host
+from port_forward_tui.forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, port, quick_ports, validate_host, requested
 from port_forward_tui.focus_settings import SCOPES, SCOPE_LABELS, read_scope, save_scope
 from port_forward_tui.error_help import connection_help
 
@@ -95,16 +95,19 @@ class EditForward(ModalScreen[Forward | None]):
     AUTO_FOCUS = "#local"
     BINDINGS = [Binding("escape", "cancel", "Cancel"), Binding("ctrl+s", "save", "Save", priority=True)]
 
-    def __init__(self, rule: Forward, create=False):
+    def __init__(self, rule: Forward, create=False, machine_label=''):
         super().__init__()
         self.rule = rule
         self.create = create
+        self.machine_label = machine_label
         if create:
             self.AUTO_FOCUS = "#remote"
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="edit-dialog"):
             yield Label("ADD A CONNECTION" if self.create else "EDIT SAVED CONNECTION", classes="dialog-title")
+            if self.machine_label:
+                yield Static('Server: ' + self.machine_label, markup=False, classes='muted')
             if not self.create:
                 yield Label("Name")
                 yield Input(self.rule.name, id="name", max_length=80)
@@ -174,15 +177,19 @@ S             Stop all tunnels
 Esc           Return from quick entry to the saved list
 Q / Ctrl+Q    Close the UI (background tunnels keep running)
 F2            Settings: return to a view here or across all Terminal windows
-H             Choose another machine; its favorites are kept separately
+H             Add/import machines or choose which server to select
 ?             This help
 
-Saved favorites reconnect only when you choose them.
+Saved favorites start OFF until you choose them.
+Started connections retry network failures automatically (2s up to 30s delay).
+RETRYING means waiting for another attempt. Enter stops it; R retries now.
+Login, host-key and occupied local-port errors need your attention.
 Background mode is ON by default: you may close the entire Terminal app.
 Reopen the UI to manage the same running tunnels. S explicitly stops all.
 Multiple views can attach at once; favorites and tunnel state stay in sync.
 With --foreground, closing the UI stops its tunnels instead.
-Signing out, rebooting, or loss of the SSH connection ends the tunnels.
+Signing out or rebooting ends the tunnels; favorites remain saved.
+After Wi-Fi or VPN returns, interrupted connections retry in the background.
 ON means SSH is listening locally; the remote service must be running.
 Only 127.0.0.1 on this computer can access these forwards.
 
@@ -245,13 +252,16 @@ class PortApp(App):
 
     def on_mount(self):
         table = self.query_one(DataTable)
-        for key, label, width in (("state", "STATE", 12), ("name", "SAVED CONNECTION", 26),
-                                  ("local", "THIS PC", 8), ("arrow", "->", 3), ("remote", "REMOTE PC", 10)):
-            table.add_column(label, key=key, width=width)
+        self.configure_columns(table)
         self.populate()
         self.sync_favorites()
         table.focus()
         self.set_interval(0.25, self.tick)
+
+    def configure_columns(self, table):
+        for key, label, width in (("state", "STATE", 12), ("name", "SAVED CONNECTION", 26),
+                                  ("local", "THIS PC", 8), ("arrow", "->", 3), ("remote", "REMOTE PC", 10)):
+            table.add_column(label, key=key, width=width)
 
     def selected(self) -> Forward | None:
         table = self.query_one(DataTable)
@@ -261,7 +271,7 @@ class PortApp(App):
 
     def state_text(self, rule: Forward) -> Text:
         state = self.manager.status(rule.id)
-        color = {"OFF": "#8391a8", "ON": "#5fe0b1", "CONNECTING": "#efc96a", "ERROR": "#ff838b"}[state]
+        color = {"OFF": "#8391a8", "ON": "#5fe0b1", "CONNECTING": "#efc96a", "RETRYING": "#efc96a", "ERROR": "#ff838b"}.get(state, '#8391a8')
         return Text(state, style=f"bold {color}")
 
     def populate(self, select_id: str | None = None):
@@ -315,7 +325,8 @@ class PortApp(App):
     def refresh_details(self):
         active = sum(self.manager.status(r.id) == "ON" for r in self.store.forwards)
         connecting = sum(self.manager.status(r.id) == "CONNECTING" for r in self.store.forwards)
-        self.update_detail("summary", f"{active} active  /  {connecting} connecting  /  {len(self.store.forwards)} saved")
+        retrying = sum(self.manager.status(r.id) == "RETRYING" for r in self.store.forwards)
+        self.update_detail("summary", f"{active} active  /  {connecting} connecting  /  {retrying} retrying  /  {len(self.store.forwards)} saved")
         rule = self.selected()
         if not rule:
             message = "No saved connections. Press A for a form, or type your remote app's port."
@@ -380,7 +391,7 @@ class PortApp(App):
         except ValueError as error:
             self.say(str(error))
             return
-        existing = next((r for r in self.store.forwards if (r.local_port, r.remote_port) == (local, remote)), None)
+        existing = next((r for r in self.favorite_candidates() if (r.local_port, r.remote_port) == (local, remote)), None)
         rule = existing or Forward.make(local, remote, name)
         if getattr(self.manager, "shared_favorites", False):
             if existing and name:
@@ -408,11 +419,14 @@ class PortApp(App):
     def action_new_forward(self):
         self.query_one("#quick", Input).focus()
 
+    def favorite_candidates(self):
+        return self.store.forwards
+
     def action_add_form(self):
         def added(rule: Forward | None):
             if rule is None:
                 return
-            existing = next((r for r in self.store.forwards if
+            existing = next((r for r in self.favorite_candidates() if
                              (r.local_port, r.remote_port) == (rule.local_port, rule.remote_port)), None)
             if existing:
                 rule = existing
@@ -430,7 +444,8 @@ class PortApp(App):
             self.populate(rule.id)
             self.say(f"Saved {rule.name}. Enter starts or stops this connection.")
             self.tick()
-        self.push_screen(EditForward(Forward.make(8000, 8000), create=True), added)
+        self.push_screen(EditForward(Forward.make(8000, 8000), create=True,
+                                     machine_label=self.store.machine_name or self.store.host), added)
 
     def action_list_focus(self):
         if self.screen is self.screen_stack[0]:
@@ -441,7 +456,7 @@ class PortApp(App):
         if not rule:
             self.action_new_forward()
             return
-        if rule.id in self.manager.running:
+        if requested(self.manager, rule.id):
             self.manager.stop(rule.id)
             self.say(f"Stopped {rule.name}.")
         else:
@@ -479,7 +494,7 @@ class PortApp(App):
                    for r in self.store.forwards):
                 self.say("That port mapping is already saved. Select the existing favorite instead.")
                 return
-            active = rule.id in self.manager.running
+            active = requested(self.manager, rule.id)
             if not self.save_rules([updated if r.id == rule.id else r for r in self.store.forwards]):
                 return
             if active:
@@ -488,7 +503,7 @@ class PortApp(App):
             self.populate(updated.id)
             self.say(f"Saved {updated.name}: local {updated.local_port} -> remote {updated.remote_port}.")
 
-        await self.push_screen(EditForward(rule), edited)
+        await self.push_screen(EditForward(rule, machine_label=self.store.machine_name or self.store.host), edited)
 
     def action_delete_forward(self):
         rule = self.selected()
@@ -543,7 +558,7 @@ class PortApp(App):
     def action_request_quit(self):
         if getattr(self.manager, "persistent", False):
             self.exit()
-        elif self.manager.running:
+        elif any(requested(self.manager, r.id) for r in self.store.forwards):
             self.push_screen(Confirm("Quit and stop all active tunnels? Your favorites stay saved."), self.finish_quit)
         else:
             self.exit()
@@ -552,7 +567,7 @@ class PortApp(App):
         def switch(confirmed=True):
             if confirmed:
                 self.exit('pick-machine')
-        if not getattr(self.manager, 'persistent', False) and self.manager.running:
+        if not getattr(self.manager, 'persistent', False) and any(requested(self.manager, r.id) for r in self.store.forwards):
             self.push_screen(Confirm('Switch machine and stop this foreground view\'s connections? Favorites stay saved.'), switch)
         else:
             switch()

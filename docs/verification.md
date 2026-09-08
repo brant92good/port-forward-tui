@@ -4,6 +4,55 @@ These are the checks behind the behavior described in the README. Results
 below were recorded on September 8, 2026. They establish behavior under the
 listed conditions; they do not establish adoption or compatibility with every PC.
 
+## Combined server list and network recovery — September 9, 2026
+
+The full local suite passed **88 tests** on Python 3.12.11 (35.852 seconds).
+
+The new keyboard tests start forwards on two machine profiles from one list,
+route quick entry/edit/delete to the selected server even when favorite IDs
+match across machines, preserve an empty server's selectable row, and cancel
+pending retries with Enter or S. Status reads are asynchronous: an unfinished
+read from one controller does not block another. A stale read cannot overwrite
+a newer local edit, and stop controls remain available after a settings file
+becomes malformed. Selecting another server updates the tab registration
+without starting another window-discovery helper.
+
+Retry tests cover startup while offline, a connection dropping after ON,
+2/4/8/16/30-second delay progression, stable-connection reset, explicit stop and
+stop-all, authentication/host-key failures, occupied ports, connection timeout,
+and a transient Windows TCP-table read failure. Existing real-process ownership
+checks now verify that an unexpectedly exited child schedules a retry.
+
+The opt-in [real transport test](../scripts/check_reconnect_live.py) passed on
+the owner's Windows 11 desktop. It started two independent machine controllers
+and SSH forwards, then confirmed both appeared ON in one overview and carried
+SSH banner traffic. One profile passed through a temporary local TCP relay.
+Closing only that relay's connections interrupted its SSH transport while the
+other forward remained usable. Restoring the relay brought the first forward
+back automatically after the overview detached, without a new start command.
+Both original controllers survived the interruption.
+
+The same test upgraded one controller, confirmed that its ON forward resumed
+while an OFF favorite stayed stopped, and preserved the other controller.
+Stopping the interrupted forward while offline prevented it from reconnecting
+after recovery. All test settings, controllers and relay sockets were isolated
+and cleaned up; existing user favorites and tunnels were not test fixtures.
+
+```powershell
+.\.venv\Scripts\python.exe -E -s scripts/check_reconnect_live.py --host YOUR_EXISTING_DIRECT_SSH_ALIAS
+```
+
+Both profiles reach one physical SSH server, with SSH on remote loopback port
+22 for the banner test. This is real transport interruption/recovery evidence,
+not two independent physical servers or an actual Wi-Fi adapter/suspend test.
+Physical laptop sleep/resume, changing Wi-Fi networks and enterprise VPN rules
+remain untested. The test requires a direct SSH alias; ordinary app connections
+continue to use the user's SSH config, including jump hosts.
+
+The README screenshots were regenerated from the actual combined UI with
+simulated Development/Lab data, including RETRYING. The add form names its
+server. Their embedded fonts and layout were reviewed in offline browser renders.
+
 ## Automated checks
 
 The multi-machine update passed **71 local app tests** and the

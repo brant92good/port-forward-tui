@@ -35,11 +35,19 @@ jump hosts. For a nondefault config file, the app records its path and passes
 it to SSH with `-F`. Keep that file in place. Import is not a copy of credentials
 or a portable backup of the referenced file.
 
-## Change machines while working
+## Manage several servers together
 
-Press **Esc, H** in Ports to return to the machine picker. The selected machine
-opens in that view; other views keep their current machine. Existing background
-forwards keep running. Foreground mode asks before stopping its connections.
+The default screen lists favorites from **all saved servers**, grouped in the
+SERVER column. Start connections on several servers at once with Enter. Moving
+Up/Down selects both a connection and its server; quick entry and the A form
+add to that server, named in **Add to** above the list and in the form itself.
+An empty server still has a row so you can select it and add a favorite.
+
+Press **Esc, H** to add/import machines or select a different initial server.
+Canceling the picker returns to the list. Each view keeps its own selection;
+existing background forwards keep running. S stops all servers in the list,
+including pending reconnect attempts. Foreground mode remains a single-machine
+view and asks before stopping its connections when you switch machines.
 
 Each machine has separate favorites, connection state and return-shortcut scope
 (F2). Two machines can save remote port 8000, but they cannot both listen on the
@@ -47,14 +55,16 @@ same local port at once. Use local 18000 for the second connection. A conflict
 is reported; the app does not stop another machine's forward to take its port.
 
 With Terminal Workspace, a new workspace window pairs a remote session and
-Ports for your chosen machine. Shortcuts use the last-focused machine view in
+Ports initially selects your chosen machine in the combined list. Selecting a
+different server's row changes that tab's remote-shortcut context immediately.
+Shortcuts use the last-focused machine view in
 the invoking window, then find that machine's most recently focused target tab.
 F2 limits that search to this window or allows other windows. In a window with
 no known machine context and multiple saved machines, a picker appears.
 Opening another workspace keeps existing workspaces and forwards running.
 
 Run `.\open.ps1 --machines` to always show the picker, or
-`.\open.ps1 --machine MACHINE_ID` to open a particular saved machine.
+`.\open.ps1 --machine MACHINE_ID` to select that server initially in the list.
 `--host workbox` remains available: it adds or opens that destination, rather
 than changing the destination of existing favorites.
 
@@ -70,6 +80,12 @@ tracking. Already running views keep their loaded code. Closing a background
 view does not stop its forwards. Machine destinations are immutable: add a new
 machine when its SSH name, login port or config path changes. Do not edit a live
 favorites file to redirect its connections.
+
+A running controller keeps its loaded code too. Use
+`ports.ps1 restart-manager --machine MACHINE_ID` after updating to enable
+automatic reconnect: it briefly stops that server's forwards, loads the new
+controller, and restores only its ON/connecting/retrying requests. Saved OFF
+favorites stay OFF. See [Updating](../README.md#updating).
 
 ## Commands for an agent
 

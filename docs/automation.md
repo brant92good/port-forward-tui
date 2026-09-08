@@ -23,7 +23,10 @@ manager, which serializes edits from all screens and agents. Saving an existing
 mapping reuses its ID; a name change to an active favorite may restart it.
 `--local 18000` chooses a different port here. `start` waits up to five seconds
 for a listener; inspect the returned state, since a slow connection can still
-be `CONNECTING`. `--wait 0` returns immediately. `stop-all` affects every
+be `CONNECTING` or `RETRYING`. `RETRYING` means the request remains enabled and
+the controller will make another network attempt; it does not mean a listener
+is ready. `--wait 0` returns immediately. `stop` cancels pending retries too.
+`stop-all` affects every
 connection for the selected machine. With multiple saved machines, writes require
 `--machine ID`; `list` without it returns connections labeled by machine.
 [Machine commands and import](machines.md#commands-for-an-agent) cover first use.
@@ -34,6 +37,19 @@ Results contain `schema_version: 1` and `ok`. Exit codes are **0** for success,
 status was not available; it does not mean the tunnel has stopped.
 Use `--data-dir 'C:\path\to\separate-data'` for a separate set of connections.
 JSON can contain private host and favorite names; review it before sharing.
+
+After an app update, `restart-manager --machine MACHINE_ID --json` loads the
+new controller and returns `restored_ids`. It briefly interrupts that server's
+connections and restores only ON/connecting/retrying requests. OFF and ERROR
+favorites stay stopped. Close old TUI views first and reopen them afterward;
+they otherwise keep running their earlier code. The command does not reboot
+Windows or touch another server's controller.
+
+The TUI displays server groups together; CLI favorite IDs remain unchanged
+within each machine. Use the pair `machine_id` and `id` from `list --json` for
+writes. Never infer a machine from a row number or an identical name on another
+server. A TUI's S key stops all listed servers; the CLI's `stop-all --machine`
+deliberately retains its explicit single-machine scope.
 
 An example request for your agent:
 
