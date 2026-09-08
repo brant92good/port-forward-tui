@@ -21,9 +21,11 @@ Write-Host '2/4 Installing the screen interface and preparing the shortcut...'
 if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
 & $portsPython -E -s (Join-Path $portsRoot 'port_forward_tui\build_focus_helper.py')
 if ($LASTEXITCODE -ne 0) { throw 'Could not build the fast return shortcut helper.' }
-Write-Host '3/4 Saving your remote computer. No SSH connection is opened during setup.'
-& $portsPython -E -s (Join-Path $portsRoot 'app.py') --host $HostName --check
-if ($LASTEXITCODE -ne 0) { throw 'Could not configure the SSH host.' }
+Write-Host '3/4 Checking setup. Choose or import machines when you open the app.'
+$portsCheckArguments = @((Join-Path $portsRoot 'app.py'), '--check')
+if ($HostName) { $portsCheckArguments += @('--host', $HostName) }
+& $portsPython -E -s @portsCheckArguments
+if ($LASTEXITCODE -ne 0) { throw 'Could not validate the saved machines.' }
 if (-not $NoTerminalProfile) {
     Write-Host '4/4 Adding the app to the Windows Terminal dropdown...'
     $portsProfileArguments = @((Join-Path $portsRoot 'port_forward_tui\terminal_profile.py'), '--name', $ProfileName)
@@ -32,5 +34,5 @@ if (-not $NoTerminalProfile) {
     if ($LASTEXITCODE -ne 0) { throw 'Windows Terminal profile registration failed.' }
 }
 Write-Output 'Ready. Open Port Forward TUI in the Terminal dropdown, or run .\.venv\Scripts\python.exe -E -s app.py'
-Write-Output 'Press A for an add-connection form. Enter the port of your remote app, such as 8000.'
+Write-Output 'Add a machine or import SSH config on first launch. H switches machines; A adds a port connection.'
 Write-Output 'Need help? Run .\doctor.ps1. Agents and scripts can use .\ports.ps1 --help.'

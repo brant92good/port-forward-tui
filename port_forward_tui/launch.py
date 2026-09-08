@@ -1,76 +1,37 @@
-"""Lightweight CLI; load the TUI only when a new view is needed."""
+﻿"""Lightweight entry point; load a screen only when a new view is needed."""
 import argparse
 from pathlib import Path
 import sys
 
-from port_forward_tui.forwarding import DATA_DIR, InstanceLock, Store, TunnelManager, validate_host
+from port_forward_tui.forwarding import DATA_DIR, InstanceLock, Store, TunnelManager
+from port_forward_tui.machines import Catalog
 
 
-def main(app_factory=None):
-    parser = argparse.ArgumentParser(description="Keyboard port-forward manager with persistent background tunnels")
-    parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
-    parser.add_argument("--host", help="SSH config alias or user@hostname; saved for future launches")
-    parser.add_argument("--foreground", action="store_true", help="Stop tunnels when the UI closes (background is the default)")
-    parser.add_argument("--focus-existing", action="store_true", help="Focus an existing live Terminal view if possible; otherwise open a new view")
-    parser.add_argument("--stop-all", action="store_true", help="Stop background tunnels without opening the UI")
-    parser.add_argument("--stop-daemon", action="store_true", help="Stop background tunnels and their supervisor")
-    parser.add_argument("--check", action="store_true", help="Validate saved settings without opening tunnels")
-    options = parser.parse_args()
+def run_view(machine, catalog, foreground=False, app_factory=None):
     lock = manager = daemon_lock = registration = None
     try:
-        if options.stop_all or options.stop_daemon:
-            from port_forward_tui.background import exchange
-            exchange(options.data_dir, "shutdown" if options.stop_daemon else "stop_all")
-            print("Background tunnels stopped.")
-            return 0
-        store = Store(options.data_dir)
+        store = Store(machine.directory)
         store.load()
-        if options.host:
-            validate_host(options.host)
-            if store.host != options.host:
-                from port_forward_tui.background import exchange
-                try:
-                    existing = exchange(options.data_dir, "status")
-                except (OSError, ValueError, KeyError):
-                    existing = None
-                if existing:
-                    raise ValueError("Stop the background manager with --stop-daemon before changing hosts.")
-                store.host = options.host
-                store.save(store.forwards)
-        if options.check:
-            print(f"OK: {store.host}; {len(store.forwards)} saved forwards; {store.path}")
-            return 0
-        if not store.host:
-            raise ValueError("Choose an SSH target on first launch: app.py --host YOUR_SSH_ALIAS")
-        if options.focus_existing and not options.foreground:
-            from port_forward_tui.views import focus_existing
-            if focus_existing(options.data_dir):
-                return 0
-        if store.keep_alive and not options.foreground:
+        if store.keep_alive and not foreground:
             from port_forward_tui.background import DaemonClient
-            manager = DaemonClient(store.host, options.data_dir)
+            manager = DaemonClient(store.host, store.directory)
         else:
-            lock = InstanceLock(options.data_dir)
-            daemon_lock = InstanceLock(options.data_dir, "daemon.lock")
-            manager = TunnelManager(store.host, options.data_dir)
+            lock = InstanceLock(store.directory)
+            daemon_lock = InstanceLock(store.directory, 'daemon.lock')
+            manager = TunnelManager(store.host, store.directory)
         if app_factory is None:
             from port_forward_tui.ui import PortApp
             app_factory = PortApp
         application = app_factory(store, manager)
-        if getattr(manager, "persistent", False):
+        if getattr(manager, 'persistent', False):
             from port_forward_tui.views import ViewRegistration
-            registration = ViewRegistration(options.data_dir, store.host)
+            registration = ViewRegistration(store.directory, store.host, catalog_root=catalog.root, machine=machine.id)
             application.view_registration = registration
-        application.run()
-        return 0
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
-        print(f"Port manager: {error}", file=sys.stderr)
-        print(f"Settings: {options.data_dir / 'forwards.json'}", file=sys.stderr)
-        return 1
+        return application.run()
     finally:
         if registration:
             registration.close()
-        if manager and not getattr(manager, "persistent", False):
+        if manager and not getattr(manager, 'persistent', False):
             manager.close()
         if daemon_lock:
             daemon_lock.close()
@@ -78,5 +39,59 @@ def main(app_factory=None):
             lock.close()
 
 
-if __name__ == "__main__":
+def main(app_factory=None):
+    parser = argparse.ArgumentParser(description='Keyboard port forwards for multiple machines; background connections are the default')
+    parser.add_argument('--data-dir', type=Path, default=DATA_DIR, help='Machine catalog and saved connections folder')
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument('--host', help='Add/use an SSH name without changing any existing destination')
+    target.add_argument('--machine', help='Saved machine id or unambiguous name from ports.py machines list')
+    parser.add_argument('--machines', action='store_true', help='Open the machine picker')
+    parser.add_argument('--foreground', action='store_true', help='Stop this view\'s connections when it closes')
+    parser.add_argument('--focus-existing', action='store_true', help='Return to a view for this machine, or open one')
+    parser.add_argument('--stop-all', action='store_true', help='Stop the selected machine\'s connections')
+    parser.add_argument('--stop-daemon', action='store_true', help='Stop the selected machine\'s background controller')
+    parser.add_argument('--check', action='store_true', help='Validate setup without opening a screen or connections')
+    options = parser.parse_args()
+    try:
+        catalog = Catalog(options.data_dir)
+        selector = catalog.add(options.host).id if options.host else options.machine
+        if options.stop_all or options.stop_daemon:
+            from port_forward_tui.background import exchange
+            directory = catalog.get(selector).directory if selector else options.data_dir
+            if not selector and not (directory / 'endpoint.json').exists():
+                items = catalog.list()
+                if len(items) != 1:
+                    raise ValueError('Select a machine with --machine. Other machines will keep running.')
+                directory = items[0].directory
+            exchange(directory, 'shutdown' if options.stop_daemon else 'stop_all')
+            print('Selected machine\'s background tunnels stopped.')
+            return 0
+        if options.check:
+            items = [catalog.get(selector)] if selector else catalog.list()
+            if not items:
+                print('OK: installation is ready. Add or import a machine when you open the app.')
+            for machine in items:
+                store = Store(machine.directory)
+                store.load()
+                print(f'OK: {machine.target}; {len(store.forwards)} saved forwards; {store.path}')
+            return 0
+        from port_forward_tui.window_context import choose_machine
+        machine = choose_machine(catalog, selector, picker=options.machines)
+        if machine and options.focus_existing and not options.foreground:
+            from port_forward_tui.views import focus_existing
+            if focus_existing(machine.directory):
+                return 0
+        while machine:
+            result = run_view(machine, catalog, options.foreground, app_factory)
+            if result != 'pick-machine':
+                break
+            machine = choose_machine(catalog, picker=True)
+        return 0
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+        print(f'Port manager: {error}', file=sys.stderr)
+        print(f'Settings folder: {options.data_dir}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
     raise SystemExit(main())

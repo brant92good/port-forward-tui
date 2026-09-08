@@ -112,13 +112,20 @@ def process_alive(pid: int) -> bool:
 
 
 class ViewRegistration:
-    def __init__(self, directory: Path, host: str):
+    def __init__(self, directory: Path, host: str, *, catalog_root=None, machine=None):
         self.directory = Path(directory) / "views"
         self.directory.mkdir(parents=True, exist_ok=True)
         identifier = uuid.uuid4().hex
         self.path = self.directory / f"{identifier}.json"
         self.title = f"Ports | {host} | {identifier[:6]}"
         self.data = {"pid": os.getpid(), "title": self.title}
+        self.context_path = None
+        if catalog_root and machine:
+            from port_forward_tui.window_context import process_started
+            self.context_path = Path(catalog_root) / 'window-views' / self.path.name
+            self.context_path.parent.mkdir(parents=True, exist_ok=True)
+            self.data['machine'] = machine
+            self.data['started'] = process_started(os.getpid())
         self.touch()
         if sys.stdout.isatty():
             # The console may not have VT output enabled until Textual starts.
@@ -126,15 +133,31 @@ class ViewRegistration:
             kernel.SetConsoleTitleW.argtypes = [wintypes.LPCWSTR]
             kernel.SetConsoleTitleW.restype = wintypes.BOOL
             kernel.SetConsoleTitleW(self.title)
+            if self.context_path:
+                from port_forward_tui.window_context import window_for_title
+                self.data['window'] = window_for_title(self.title)
+                self.touch()
 
     def touch(self):
         self.data["last_focus"] = time.time()
         temporary = self.path.with_suffix(".tmp")
         temporary.write_text(json.dumps(self.data), encoding="utf-8")
         os.replace(temporary, self.path)
+        if self.context_path:
+            temporary = self.context_path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(self.data), encoding='utf-8')
+            os.replace(temporary, self.context_path)
+
+    def focused(self):
+        if self.context_path:
+            from port_forward_tui.window_context import foreground_window
+            self.data['window'] = foreground_window()
+        self.touch()
 
     def close(self):
         self.path.unlink(missing_ok=True)
+        if self.context_path:
+            self.context_path.unlink(missing_ok=True)
 
 
 def live_titles(directory: Path) -> list[str]:

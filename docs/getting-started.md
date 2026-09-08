@@ -31,7 +31,7 @@ Run these commands in a **PowerShell tab inside Windows Terminal**, on Windows.
 | Windows OpenSSH Client | Windows Settings → Optional features → OpenSSH Client. `ssh -V` should work. |
 | A working SSH login | Follow the short walkthrough below if you do not already have one. |
 
-**1. Confirm your remote login.** If you normally run `ssh workbox`, then
+**1. Prepare a remote login (needed before starting forwards, not before installation).** If you normally run `ssh workbox`, then
 `workbox` is your **SSH name**. Examples here use that name; replace it with yours.
 
 ```powershell
@@ -61,23 +61,24 @@ walks through that step. Never paste a private key into an issue or an agent cha
 ```powershell
 git clone https://github.com/brant92good/port-forward-tui.git
 cd port-forward-tui
-.\install.ps1 -HostName workbox
+.\install.ps1
 .\open.ps1
 ```
 
-You can also run `.\install.ps1` and answer its SSH-name question. It reuses
-your saved name on later runs. Setup installs packages in a private `.venv`
+Installation does not ask for a host. On first launch, press A to add a machine
+or I to preview and import SSH names. Select a machine with Enter.
+See [machines and SSH import](machines.md) for the complete keyboard flow. Setup installs packages in a private `.venv`
 folder and adds an entry to the Terminal dropdown. It does not open SSH or start
 your saved connections. Global Python packages, PATH and other Terminal profiles
 are preserved.
 
 For a particular Python installation:
-`.\install.ps1 -HostName workbox -Python 'C:\path\to\python.exe'`.
+`.\install.ps1 -Python 'C:\path\to\python.exe'`.
 Conda activation is only needed to select an environment for setup; shortcuts
 then call the private Python directly. Keep the base Python installed.
 
 If Windows blocks the script, inspect it first and, where your organization's
-policy permits, use `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -HostName workbox`.
+policy permits, use `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`.
 This sets policy for that invocation, not for the whole computer.
 
 ## Open your first remote app
@@ -113,6 +114,7 @@ or another protocol, use the appropriate URL or client yourself.
 | S | Stop all connections; favorites stay saved |
 | F2 / ? | Shortcut settings / help |
 
+Press Esc then H to choose another machine; existing background forwards continue.
 Starter favorites are examples and begin OFF. Edit or delete them freely.
 Multiple open screens share favorites and connection state. Reboot, sign-out,
 or a lost SSH connection ends running tunnels; favorites remain saved.

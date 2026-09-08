@@ -25,11 +25,11 @@ that key-based login works with `ssh YOUR_HOST` before starting.
 ```powershell
 git clone https://github.com/brant92good/port-forward-tui.git
 cd port-forward-tui
-.\install.ps1 -HostName workbox
+.\install.ps1
 ```
 
-Replace `workbox` with your SSH alias. The installer creates a private `.venv`,
-sets your target, and adds **Port Forward TUI** to the Windows Terminal dropdown.
+Choose or import machines after installation; see [the machine guide](machines.md).
+The installer creates a private `.venv` and adds **Port Forward TUI** to the Windows Terminal dropdown.
 Keep the checkout in its installed location because the profile points to it.
 
 Setup tries `python.exe`, `py.exe`, then `python3.exe`, and validates Windows
@@ -52,9 +52,9 @@ commands directly:
 ```powershell
 python -I -m venv .venv
 .\.venv\Scripts\python.exe -E -s -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -E -s build_focus_helper.py
-.\.venv\Scripts\python.exe -E -s app.py --host workbox --check
-.\.venv\Scripts\python.exe -E -s terminal_profile.py
+.\.venv\Scripts\python.exe -E -s port_forward_tui/build_focus_helper.py
+.\.venv\Scripts\python.exe -E -s app.py --check
+.\.venv\Scripts\python.exe -E -s port_forward_tui/terminal_profile.py
 ```
 
 Launch from the dropdown or with:
@@ -64,9 +64,9 @@ Launch from the dropdown or with:
 ```
 
 For a custom Terminal profile name, use
-`.\install.ps1 -HostName workbox -ProfileName "Ports - Workbox"`.
+`.\install.ps1 -ProfileName "Ports - Workbox"`.
 Use `-NoTerminalProfile` to skip registration. For a custom Terminal settings
-location, run `terminal_profile.py --settings "C:\path\settings.json"`.
+location, run `port_forward_tui/terminal_profile.py --settings "C:\path\settings.json"`.
 Registration preserves the existing default shell and other profiles, and saves
 a backup. For JSONC settings with comments, add a profile manually in Terminal
 Settings with this command line (adjust the checkout path):
@@ -87,7 +87,7 @@ their change.
 To add a Windows Terminal shortcut that returns to an existing view, use:
 
 ```powershell
-.\install.ps1 -HostName workbox -FocusShortcut 'ctrl+alt+p'
+.\install.ps1 -FocusShortcut 'ctrl+alt+p'
 ```
 
 The shortcut selects the most recently focused live Ports tab it can find,
@@ -185,7 +185,9 @@ The `keep_alive` setting defaults to `true`; set it to `false` to prefer
 foreground mode. Use `--data-dir PATH` for a separate set of favorites and an
 independent supervisor. Host selection is per data directory.
 
-To change targets, stop the supervisor and run `app.py --host NEW_ALIAS`.
+To choose another machine, press Esc then H, or run `app.py --host NEW_ALIAS`.
+Each destination keeps separate favorites and a separate supervisor. Existing
+background connections keep running; do not rewrite a live destination in JSON.
 Aliases, usernames, ports, jump hosts, and keys are supplied through your normal
 OpenSSH configuration. Password-only login is not supported by background
 processes; encrypted private keys should be loaded into `ssh-agent`.

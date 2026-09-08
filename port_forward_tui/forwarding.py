@@ -64,6 +64,9 @@ class Store:
         self.path = self.directory / "forwards.json"
         self.host = DEFAULT_HOST
         self.keep_alive = True
+        self.ssh_port = None
+        self.ssh_config = None
+        self.machine_name = ''
         self.forwards: list[Forward] = []
 
     def load(self):
@@ -99,11 +102,22 @@ class Store:
             raise ValueError("Duplicate saved forward IDs.")
         self.host, self.forwards = host, rules
         self.keep_alive = keep_alive
+        self.ssh_port = port(data['ssh_port']) if data.get('ssh_port') is not None else None
+        self.ssh_config = data.get('ssh_config')
+        if self.ssh_config is not None and (not isinstance(self.ssh_config, str) or not self.ssh_config):
+            raise ValueError('Invalid SSH configuration path.')
+        self.machine_name = data.get('machine_name', '')
+        if not isinstance(self.machine_name, str) or len(self.machine_name) > 80:
+            raise ValueError('Invalid machine name.')
 
     def save(self, rules: list[Forward]):
         self.directory.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps({"version": 1, "host": self.host, "keep_alive": self.keep_alive,
-                              "forwards": [asdict(r) for r in rules]}, indent=2, ensure_ascii=False) + "\n"
+        data = {"version": 1, "host": self.host, "keep_alive": self.keep_alive,
+                "forwards": [asdict(r) for r in rules]}
+        for key in ('ssh_port', 'ssh_config', 'machine_name'):
+            if getattr(self, key):
+                data[key] = getattr(self, key)
+        payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         fd, temporary = tempfile.mkstemp(prefix="forwards-", suffix=".tmp", dir=self.directory)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as output:
@@ -209,8 +223,12 @@ def listeners() -> set[tuple[int, int]]:
     return set()
 
 
-def ssh_command(host: str, rule: Forward) -> list[str]:
-    return [SSH, "-N", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+def ssh_options(ssh_port=None, ssh_config=None):
+    return (["-p", str(port(ssh_port))] if ssh_port is not None else []) + (["-F", str(ssh_config)] if ssh_config else [])
+
+
+def ssh_command(host: str, rule: Forward, ssh_port=None, ssh_config=None) -> list[str]:
+    return [SSH, *ssh_options(ssh_port, ssh_config), "-N", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
             "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=10",
             "-o", "ConnectionAttempts=1", "-o", "ServerAliveInterval=15",
             "-o", "ServerAliveCountMax=3", "-o", "ControlMaster=no",
@@ -232,6 +250,10 @@ class TunnelManager:
     persistent = False
     def __init__(self, host: str, directory: Path):
         self.host, self.directory = host, Path(directory)
+        settings = Store(self.directory)
+        if settings.path.exists():
+            settings.load()
+        self.ssh_port, self.ssh_config = settings.ssh_port, settings.ssh_config
         self.running: dict[str, Running] = {}
         self.states: dict[str, str] = {}
         self.logs: dict[str, deque[str]] = {}
@@ -272,7 +294,7 @@ class TunnelManager:
         process = job = None
         try:
             job = ProcessJob()
-            process = subprocess.Popen(ssh_command(self.host, rule), stdin=subprocess.DEVNULL,
+            process = subprocess.Popen(ssh_command(self.host, rule, self.ssh_port, self.ssh_config), stdin=subprocess.DEVNULL,
                                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                                        encoding="utf-8", errors="replace",
                                        creationflags=subprocess.CREATE_NO_WINDOW)

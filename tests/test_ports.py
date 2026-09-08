@@ -30,8 +30,9 @@ class ReadOnlyCommands(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(result['forwards'], [])
             code, result = command(directory, 'doctor')
-            self.assertEqual(code, 1)
-            self.assertFalse(result['ok'])
+            target = next(c for c in result['checks'] if c['id'] == 'saved_target')
+            self.assertEqual(target['status'], 'warning')
+            self.assertEqual(code, 0 if result['ok'] else 1)
             self.assertFalse(directory.exists())
 
     def test_json_argument_error_and_corrupt_file_are_explicit_and_preserved(self):

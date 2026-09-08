@@ -25,3 +25,8 @@ ModalScreen { align: center middle; background: #050910 75%; }
 #edit-error { height: auto; color: #ff838b; }
 .buttons { height: 3; margin-top: 1; align-horizontal: right; }
 .buttons Button { margin-left: 1; }
+#machine-picker { padding: 1 2; }
+#machines { height: 1fr; min-height: 4; }
+#machine-form, #machine-import { width: 78; max-width: 95%; max-height: 95%; height: auto; padding: 1 2; border: round #78e5d0; background: #142237; }
+#import-hosts { height: 8; }
+#machine-error, #import-error { height: auto; color: #ff838b; }

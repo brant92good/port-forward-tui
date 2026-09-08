@@ -85,6 +85,10 @@ class DaemonClient:
 
     def __init__(self, host: str, directory: Path):
         self.host, self.directory = host, Path(directory)
+        settings = Store(self.directory)
+        if settings.path.exists():
+            settings.load()
+        self.ssh_port, self.ssh_config = settings.ssh_port, settings.ssh_config
         self.running: dict[str, bool] = {}
         self.states: dict[str, str] = {}
         self.logs: dict[str, str] = {}
@@ -96,6 +100,8 @@ class DaemonClient:
     def _apply(self, result: dict):
         if result.get("host") != self.host:
             raise OSError("The background manager uses a different SSH host. Stop it before changing hosts.")
+        if any(result.get(key) != getattr(self, key, None) for key in ('ssh_port', 'ssh_config')):
+            raise OSError('The background manager uses different SSH settings. Add a separate machine instead of editing a live destination.')
         self.running = dict.fromkeys(result["running"], True)
         self.states = result["states"]
         self.logs = result["details"]
@@ -154,6 +160,7 @@ class Supervisor:
 
     def snapshot(self):
         return {"ok": True, "protocol": PROTOCOL, "pid": os.getpid(), "host": self.manager.host,
+                "ssh_port": getattr(self.manager, 'ssh_port', None), "ssh_config": getattr(self.manager, 'ssh_config', None),
                 "capabilities": ["shared_favorites"], "forwards": [asdict(r) for r in self.store.forwards],
                 "running": list(self.manager.running), "states": dict(self.manager.states),
                 "details": {key: self.manager.details(key)[-6000:] for key in self.manager.states}}
@@ -171,6 +178,8 @@ class Supervisor:
                 self.store.load()
                 if self.store.host != self.manager.host:
                     raise ValueError("SSH host changed. Stop the background manager before switching hosts.")
+                if any(getattr(self.store, key) != getattr(self.manager, key, None) for key in ('ssh_port', 'ssh_config')):
+                    raise ValueError('SSH settings changed. Restore them and add a separate machine instead.')
             result_rule = None
             if action == "start":
                 rule = next((r for r in self.store.forwards if r.id == request.get("rule_id")), None)

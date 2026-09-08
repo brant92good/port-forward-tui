@@ -42,12 +42,12 @@ def app_checks(directory=DATA_DIR, root=ROOT):
     compiler = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
     checks.append(check('focus_helper', compiler.is_file(), 'The Windows shortcut-helper compiler is available.',
                         'The installer needs the Windows .NET Framework compiler; see README troubleshooting.'))
-    store = Store(directory)
     try:
-        if store.path.exists():
-            store.load()
-        checks.append(check('saved_target', bool(store.host), 'A remote computer is selected.',
-                            'Run .\\install.ps1 -HostName workbox, replacing workbox with your SSH name.'))
+        from port_forward_tui.machines import Catalog
+        machines = Catalog(directory).list()
+        checks.append(check('saved_target', bool(machines),
+                            'Saved machines are available.' if machines else 'No machines added yet; installation can still complete.',
+                            'Open the app to add a machine or import SSH config.', warning=True))
     except (OSError, ValueError, KeyError, TypeError):
         checks.append(check('saved_settings', False, 'The saved connections file could not be read.',
                             'Keep a backup of forwards.json and repair its JSON; do not delete your favorites.'))

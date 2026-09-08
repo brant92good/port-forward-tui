@@ -38,7 +38,7 @@ class Settings(ModalScreen[str | None]):
             yield Label("When I return to the app, look for my last-used tab in:")
             yield OptionList(*SCOPE_LABELS, id="focus-scope")
             yield Static("Up / Down chooses. Enter saves. Esc cancels.\n"
-                         "This affects the Herdr and Ports return shortcuts.\n"
+                         "This affects return shortcuts for the selected machine.\n"
                          "If no matching tab is found, a new one opens here.", classes="muted")
             yield Static("", id="settings-error", markup=False)
 
@@ -174,6 +174,7 @@ S             Stop all tunnels
 Esc           Return from quick entry to the saved list
 Q / Ctrl+Q    Close the UI (background tunnels keep running)
 F2            Settings: return to a view here or across all Terminal windows
+H             Choose another machine; its favorites are kept separately
 ?             This help
 
 Saved favorites reconnect only when you choose them.
@@ -209,6 +210,7 @@ class PortApp(App):
         Binding("r", "restart", "Restart", show=False), Binding("b", "browser", "Browser"),
         Binding("s", "stop_all", "Stop all"), Binding("question_mark", "help", "Help"),
         Binding("f2", "settings", "Settings", show=False),
+        Binding("h", "machines", "Machines"),
         Binding("q", "request_quit", "Quit"),
         Binding("ctrl+q", "request_quit", "Quit", show=False, priority=True),
         Binding("ctrl+c", "request_quit", "Quit", show=False, priority=True),
@@ -227,7 +229,7 @@ class PortApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="main"):
-            yield Static(f"Remote computer: {self.store.host}", id="destination", markup=False)
+            yield Static(f"Machine: {self.store.machine_name or self.store.host}  |  {self.store.host}  |  H: change machine", id="destination", markup=False)
             yield Static("CONNECT TO A REMOTE APP", classes="section-label")
             yield Input(placeholder="8000  or  18000:8000  [optional name]", id="quick", max_length=100, select_on_focus=False)
             yield Static("Type the remote app's port + Enter, or press A for a form. ? explains ports.", classes="muted", id="hint")
@@ -308,7 +310,7 @@ class PortApp(App):
 
     def on_app_focus(self):
         if self.view_registration:
-            self.view_registration.touch()
+            self.view_registration.focused()
 
     def refresh_details(self):
         active = sum(self.manager.status(r.id) == "ON" for r in self.store.forwards)
@@ -545,6 +547,15 @@ class PortApp(App):
             self.push_screen(Confirm("Quit and stop all active tunnels? Your favorites stay saved."), self.finish_quit)
         else:
             self.exit()
+
+    def action_machines(self):
+        def switch(confirmed=True):
+            if confirmed:
+                self.exit('pick-machine')
+        if not getattr(self.manager, 'persistent', False) and self.manager.running:
+            self.push_screen(Confirm('Switch machine and stop this foreground view\'s connections? Favorites stay saved.'), switch)
+        else:
+            switch()
 
     def finish_quit(self, confirmed: bool):
         if confirmed:

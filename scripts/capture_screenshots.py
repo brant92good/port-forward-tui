@@ -13,6 +13,8 @@ sys.path.insert(0, str(ROOT))
 from port_forward_tui.ui import PortApp
 from textual import events
 from port_forward_tui.forwarding import Forward, Store
+from port_forward_tui.machines import Catalog
+from port_forward_tui.machine_ui import MachinePicker
 
 
 class DemoConnections:
@@ -56,6 +58,13 @@ async def main():
     output = ROOT / 'docs/screenshots'
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='ports-screenshot-') as folder:
+        catalog = Catalog(Path(folder) / 'demo-machines')
+        catalog.add('workbox', 'Development server')
+        catalog.add('alex@lab.example.com', 'Lab workstation', 2222)
+        picker = MachinePicker(catalog)
+        async with picker.run_test(size=(104, 24)) as pilot:
+            await pilot.pause()
+            capture(picker, output / 'machines.svg', 'Choose a machine - example data')
         store = Store(Path(folder))
         store.host = 'demo-server'
         store.forwards = [Forward.make(8000, 8000, 'My web app'),

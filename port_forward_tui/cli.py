@@ -22,8 +22,22 @@ def arguments(argv):
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument('--json', action='store_true', default=argparse.SUPPRESS, help='Print one JSON result for scripts')
     shared.add_argument('--data-dir', type=Path, default=argparse.SUPPRESS, help='Use a separate saved-connections folder')
+    shared.add_argument('--machine', default=argparse.SUPPRESS, help='Saved machine id or unambiguous name')
     parser = Parser(description='Save and control connections to apps on your remote computer.', parents=[shared])
     commands = parser.add_subparsers(dest='command', required=True, parser_class=Parser)
+    machines = commands.add_parser('machines', help='List, add or import machines without connecting', parents=[shared])
+    machine_commands = machines.add_subparsers(dest='machine_command', required=True, parser_class=Parser)
+    machine_commands.add_parser('list', parents=[shared], help='List saved machines')
+    add = machine_commands.add_parser('add', parents=[shared], help='Save a machine; no SSH connection is opened')
+    add.add_argument('target', help='SSH config alias or user@address')
+    add.add_argument('--name', default='')
+    add.add_argument('--ssh-port', type=port, help='Optional SSH login port, not the forwarded app port')
+    add.add_argument('--config', type=Path, help='Optional SSH configuration file to use at connection time')
+    for verb in ('discover', 'import'):
+        command = machine_commands.add_parser(verb, parents=[shared], help='Read SSH host names' if verb == 'discover' else 'Save host names from SSH config')
+        command.add_argument('--config', type=Path, help='Defaults to ~/.ssh/config')
+        if verb == 'import':
+            command.add_argument('--select', action='append', help='Import this alias only; repeat for multiple names')
     for name, help_text in [('doctor', 'Check this computer without changing it or contacting SSH'),
                             ('list', 'Read saved connections and any available live status'),
                             ('stop-all', 'Stop every connection in this data folder')]:
@@ -42,6 +56,7 @@ def arguments(argv):
     options = parser.parse_args(argv)
     options.json = getattr(options, 'json', False)
     options.data_dir = getattr(options, 'data_dir', DATA_DIR)
+    options.machine = getattr(options, 'machine', None)
     if options.command == 'start' and not 0 <= options.wait <= 30:
         raise UsageError('--wait must be between 0 and 30 seconds.')
     if options.command == 'delete' and not options.yes:
@@ -75,9 +90,40 @@ def listing(store):
 
 
 def execute(options):
+    from port_forward_tui.machines import Catalog, import_ssh, ssh_aliases
+    catalog = Catalog(options.data_dir)
+    if options.command == 'machines':
+        if options.machine_command == 'discover':
+            return dict(ok=True, aliases=ssh_aliases(options.config))
+        if options.machine_command == 'add':
+            added = catalog.add(options.target, options.name, options.ssh_port, options.config)
+            return dict(ok=True, machine=added.public(), machines=[m.public() for m in catalog.list()])
+        if options.machine_command == 'import':
+            imported = import_ssh(catalog, options.config, options.select)
+            return dict(ok=True, imported=[m.id for m in imported], machines=[m.public() for m in catalog.list()])
+        return dict(ok=True, machines=[m.public() for m in catalog.list()])
     if options.command == 'doctor':
         from port_forward_tui.diagnostics import app_checks, report
         return report(app_checks(options.data_dir))
+    if options.machine:
+        options.data_dir = catalog.get(options.machine).directory
+    else:
+        # Preserve emergency stop with an unreadable legacy favorites file.
+        try:
+            machines = catalog.list()
+        except (OSError, ValueError, KeyError, TypeError):
+            if options.command != 'stop-all' or not (options.data_dir / 'endpoint.json').exists():
+                raise
+            machines = []
+        if len(machines) == 1:
+            options.data_dir = machines[0].directory
+        elif len(machines) > 1:
+            if options.command == 'list':
+                summaries = [dict(machine=m.public(), **listing(read_store(m.directory))) for m in machines]
+                return dict(ok=True, machines=summaries,
+                            forwards=[dict(rule, machine_id=item['machine']['id'], machine_name=item['machine']['name'])
+                                      for item in summaries for rule in item['forwards']])
+            raise UsageError('Several machines are saved. Add --machine ID; run machines list to choose one.')
     if options.command == 'stop-all':
         from port_forward_tui.background import exchange
         snapshot = exchange(options.data_dir, 'stop_all')
@@ -88,7 +134,7 @@ def execute(options):
     if options.command == 'list':
         return dict(ok=True, **listing(store))
     if not store.host:
-        raise ValueError('Choose your remote computer first: .\\install.ps1 -HostName YOUR_SSH_NAME')
+        raise ValueError('Add a machine first: .\\ports.ps1 machines add YOUR_SSH_NAME. Installation does not require a host.')
     if not store.keep_alive:
         raise ValueError('These commands use background mode. This data folder is set to foreground mode; use its TUI.')
     if options.command in ('start', 'stop', 'delete'):
@@ -134,13 +180,20 @@ def main(argv=None):
             print_report(result, as_json)
         elif as_json:
             print(json.dumps(result, ensure_ascii=True))
+        elif options.command == 'machines':
+            for alias in result.get('aliases', []):
+                print(alias)
+            for machine in result.get('machines', []):
+                print(f"{machine['name']} | {machine['target']} | id {machine['id']}")
+            if not result.get('machines') and not result.get('aliases'):
+                print('No machines yet. Use machines add YOUR_SSH_NAME or machines import.')
         else:
             if result.get('warning'):
                 print(result['warning'])
             if not result.get('forwards'):
-                print('No saved connections. Run install.ps1 first, then save --remote 8000 --name "My app".')
+                print('No saved connections. Add a machine, then save --remote 8000 --name "My app".')
             for rule in result.get('forwards', []):
-                print(f"{rule['state']:10} {rule['name']} | this PC {rule['local_port']} -> remote {rule['remote_port']} | id {rule['id']}")
+                print(f"{rule.get('machine_name', '')} {rule['state']:10} {rule['name']} | this PC {rule['local_port']} -> remote {rule['remote_port']} | id {rule['id']}")
             if result.get('id'):
                 print('Favorite ID: ' + result['id'])
             print('ON means a local listener exists; the remote app must also be running. UNKNOWN means live status was not observed.')

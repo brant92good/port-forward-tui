@@ -15,8 +15,9 @@ connection; a background process owns it so closing the screen does not stop it.
   start, stop and delete commands rather than screen automation or editing live
   JSON. Read IDs from results. `UNKNOWN` means no live status was observed;
   `ON` confirms a local listener, not a working remote web service.
-- Installation: `./install.ps1 -HostName EXISTING_ALIAS -NonInteractive`.
-  Get the SSH name from the user or existing configuration. Do not invent one.
+- Installation: `./install.ps1 -NonInteractive`; no host is required.
+  Use `ports.ps1 machines add EXISTING_ALIAS --json` or explicit SSH import later.
+  Get SSH names from the user or existing configuration. Do not invent them.
   Honor the user's existing authorization for installation, tests and publishing.
 - JSON has `schema_version: 1` and `ok`. Exit codes: 0 success, 1 failed check or
   operation, 2 invalid arguments. Startup without usable Python is reported by
@@ -27,6 +28,8 @@ connection; a background process owns it so closing the screen does not stop it.
 - `port_forward_tui/ui.py` / `port_forward_tui/app.tcss`: screen, keyboard actions, add/edit forms, help.
 - `port_forward_tui/cli.py` / `port_forward_tui/diagnostics.py`: headless commands and local checks.
 - `port_forward_tui/forwarding.py`: file schema, SSH arguments, owned Windows process jobs.
+- `port_forward_tui/machines.py`, `machine_ui.py`: independent machine catalog, keyboard picker and opt-in SSH import.
+- `port_forward_tui/window_context.py`: resolve the invoking window's machine before choosing a return target.
 - `port_forward_tui/background.py`: authenticated local control server and serialized writes.
 - `port_forward_tui/launch.py`, `port_forward_tui/views.py`, `native/FocusHelper.cs`: lightweight return shortcut.
 - `install.ps1`, `scripts/python_bootstrap.ps1`: private environment and Terminal entry.

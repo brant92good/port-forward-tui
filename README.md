@@ -15,6 +15,7 @@ and reuse it tomorrow. By default, closing the terminal leaves it running.
 ## What it does
 
 - Saves named favorites, so you can start and stop familiar connections with the keyboard.
+- Adds machines manually or imports SSH names, with separate favorites for each machine.
 - Uses the same port on both computers by default. Choose a different local port when one is busy.
 - Keeps active forwards in a background process; multiple app tabs share the same connections.
 - Provides commands and JSON output for scripts and coding agents.
@@ -26,17 +27,17 @@ this does not publish your app to the internet.
 
 ## Set up
 
-You need **Windows Terminal, Git, Windows Python 3.12+, OpenSSH Client**, and
-an SSH login that works without a password prompt. Use your existing SSH name
-in place of `workbox` below. If `ssh workbox` does not work yet, start with the
-[first-connection guide](docs/getting-started.md), including prerequisites and SSH keys.
+You need **Windows Terminal, Git, Windows Python 3.12+ and OpenSSH Client**.
+You can install before choosing a machine. To start forwards later, you need
+an SSH login that works without a password prompt; the
+[first-connection guide](docs/getting-started.md) explains prerequisites and SSH keys.
 
 Run in a PowerShell tab:
 
 ```powershell
 git clone https://github.com/brant92good/port-forward-tui.git
 cd port-forward-tui
-.\install.ps1 -HostName workbox
+.\install.ps1
 .\open.ps1
 ```
 
@@ -44,6 +45,12 @@ Setup creates a private Python environment and adds Port Forward TUI to the
 Terminal dropdown. Keep this folder in place; the profile points to it.
 It preserves your other Terminal profiles and global Python packages.
 Saved connections start OFF until you start them.
+
+On first launch, **A** adds a machine or **I** imports names from your SSH config.
+Select a machine with Enter. In its port manager, **Esc → H** changes machines
+while existing background forwards keep running. Herdr is not required.
+The [machine guide](docs/machines.md) explains import, manual login settings and
+using multiple machines at once.
 
 Using Conda or a Python outside PATH? Pass `-Python 'C:\path\python.exe'` to
 the installer. Shortcuts then use the app's environment directly, without
@@ -69,6 +76,7 @@ busy on your laptop, type `18000:8000 My web app`; then use `http://localhost:18
 | Key | Action |
 | --- | --- |
 | A | Add a connection with a form |
+| H | Choose another machine |
 | Up / Down, then Enter or Space | Start or stop a saved favorite |
 | E / D | Edit / delete the selected favorite |
 | B / R | Open its HTTP address / restart the connection |
@@ -105,8 +113,9 @@ covers missing tools, keys, VPNs, port conflicts and blocked PowerShell scripts.
 
 ```powershell
 .\doctor.ps1 --json
-.\ports.ps1 save --remote 8000 --name 'My web app' --json
-.\ports.ps1 start FAVORITE_ID --json   # Use the id returned by save
+.\ports.ps1 machines add workbox --json
+.\ports.ps1 save --machine workbox --remote 8000 --name 'My web app' --json
+.\ports.ps1 start FAVORITE_ID --machine workbox --json   # Use the id returned by save
 ```
 
 `save` records the favorite; `start` opens it. Inspect the returned state:
@@ -117,16 +126,16 @@ exit codes and JSON output. [AGENTS.md](AGENTS.md) explains how to work on the c
 You can give an agent this request, replacing `YOUR_SSH_NAME`:
 
 > Read AGENTS.md and check setup with doctor.ps1 --json. Use my existing SSH
-> name YOUR_SSH_NAME. Install with -NonInteractive, save remote port 8000 as
-> My web app, then start it. Report its state and browser address. Preserve
+> name YOUR_SSH_NAME. Install with -NonInteractive, add that machine, then save
+> remote port 8000 as My web app using its machine id. Start it and report its state and browser address. Preserve
 > my other favorites and connections.
 
 ## Related tools and development
 
 For one temporary forward, a plain `ssh -L` command may be enough. This app
 adds saved names, keyboard controls and shared background connections.
-It currently uses one SSH destination per data folder and supports local TCP
-forwards. Password-only logins, UDP and reverse forwarding are outside its scope.
+Each saved machine has its own data folder and supports local TCP forwards.
+Password-only background logins, UDP and reverse forwarding are outside its scope.
 
 [Terminal Workspace](https://github.com/brant92good/terminal-workspace) adds a
 Herdr remote-terminal tab, a two-tab Start/desktop button, and return shortcuts.

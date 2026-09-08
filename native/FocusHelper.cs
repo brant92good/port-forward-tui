@@ -147,9 +147,15 @@ public static class FocusHelper {
             var options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < arguments.Length; i++) {
                 string key = arguments[i];
-                options[key] = key == "-ProbeOnly" ? "true" : arguments[++i];
+                options[key] = key == "-ProbeOnly" || key == "-ResolveOrigin" ? "true" : arguments[++i];
             }
             string value;
+            if (options.ContainsKey("-ResolveOrigin")) {
+                var originTab = Tabs(false).FirstOrDefault(t => t.title == options["-OriginTitle"]);
+                if (originTab == null) return 1;
+                Console.WriteLine(Json.Serialize(new { window = originTab.window }));
+                return 0;
+            }
             if (options.TryGetValue("-TracePath", out value)) {
                 TracePath = value;
                 Trace.Add(new { name = "native_entry", at = Started });
