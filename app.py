@@ -203,7 +203,7 @@ class PortApp(App):
     ENABLE_COMMAND_PALETTE = False
     CSS_PATH = "app.tcss"
     BINDINGS = [
-        Binding("a", "add_form", "Add"),
+        Binding("a", "add_form", "Add form"),
         Binding("n", "new_forward", "Quick entry", show=False), Binding("e", "edit_forward", "Edit"),
         Binding("space", "toggle", "On / off"), Binding("d", "delete_forward", "Delete"),
         Binding("r", "restart", "Restart", show=False), Binding("b", "browser", "Browser"),

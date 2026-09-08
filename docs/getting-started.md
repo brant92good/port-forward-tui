@@ -83,13 +83,14 @@ This sets policy for that invocation, not for the whole computer.
 ## Open your first remote app
 
 1. Make sure the app is running on the **remote** computer. Suppose it uses port 8000.
-2. In Port Forward TUI, press **A**. Enter `8000` in the remote-port field.
+2. In Port Forward TUI, press **Esc**, then **A**. Enter `8000` in the remote-port field.
 3. Leave the port on this computer blank to use the same number, then press **Enter**.
 4. When the row shows **ON**, press **B** to open the local HTTP address in your browser.
 
 ![The add form explains remote and local ports and defaults to the same number](screenshots/add-connection.svg)
 
-*Actual add form, captured with example data. Tab moves between fields.*
+*Actual add form: Esc → A, with example remote port 8000 and name “My web app”.
+Tab moves between fields. N opens quick entry; E edits an existing favorite.*
 
 Prefer fewer keystrokes? Just type **`8000` then Enter** in the main screen.
 If port 8000 is already used here, type **`18000:8000`** instead: this computer

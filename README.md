@@ -52,12 +52,16 @@ activating Conda or loading a shell profile. Keep that base Python installed.
 ## Open a remote app
 
 1. Start your app on the remote computer. This example uses port **8000**.
-2. In Ports, press **A**, enter `8000`, and press **Enter**. Leave the local port blank to use 8000 here too.
+2. From the saved list, press **A**, enter `8000`, and press **Enter**. If you are typing in quick entry, press **Esc** first. Leave the local port blank to use 8000 here too.
 3. When the row shows **ON**, press **B** to open `http://localhost:8000`.
 
 ![Add a connection, with the local port defaulting to the remote port](docs/screenshots/add-connection.svg)
 
-*Actual add form with example data. Tab moves between fields.*
+*Press Esc → A to open this add form. The example has remote port 8000 and
+name “My web app”; the blank local port also uses 8000. Tab moves between fields.*
+
+**N** focuses the one-line quick-entry box. **A** opens this form to add a
+connection. **E** opens a similar form with a saved connection's values to edit it.
 
 You can also type `8000` and Enter directly in the main screen. If that port is
 busy on your laptop, type `18000:8000 My web app`; then use `http://localhost:18000`.
