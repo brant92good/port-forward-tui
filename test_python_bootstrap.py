@@ -14,9 +14,13 @@ POWERSHELL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/Windo
 class PythonBootstrapTests(unittest.TestCase):
     def run_script(self, folder, script, *arguments, env=None):
         path = Path(folder) / "probe.ps1"
+        # Keep param first, then make the captured JSON independent of the
+        # machine's console code page (the test includes Chinese characters).
+        parameter_line, body = script.split("\n", 1)
+        script = parameter_line + "\n[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n" + body
         path.write_text(script, encoding="utf-8-sig")
         return subprocess.run([str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(path),
-                               *map(str, arguments)], capture_output=True, text=True, errors="replace",
+                               *map(str, arguments)], capture_output=True, text=True, encoding="utf-8", errors="replace",
                               env=env, creationflags=subprocess.CREATE_NO_WINDOW, timeout=45)
 
     def test_creates_isolated_environment_in_unicode_path_with_poisoned_python_variables(self):
@@ -31,14 +35,9 @@ $info | ConvertTo-Json -Compress
 """
             # param must precede executable statements in a PowerShell script.
             script = script.replace(". $Bootstrap", "$ErrorActionPreference = 'Stop'\n. $Bootstrap")
-            path = Path(folder) / "bootstrap-check.ps1"
-            path.write_text(script, encoding="utf-8-sig")
             env = dict(os.environ, PYTHONHOME=str(Path(folder) / "wrong-home"), PYTHONPATH=str(Path(folder) / "unrelated-project"))
             env["PATH"] = os.pathsep.join([str(Path(os.environ["SystemRoot"]) / "System32"), os.environ["SystemRoot"]])
-            result = subprocess.run([str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(path),
-                                     str(ROOT / "python_bootstrap.ps1"), str(target), sys._base_executable],
-                                    env=env, capture_output=True, text=True, errors="replace",
-                                    creationflags=subprocess.CREATE_NO_WINDOW, timeout=45)
+            result = self.run_script(folder, script, ROOT / "python_bootstrap.ps1", target, sys._base_executable, env=env)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             info = json.loads(result.stdout.splitlines()[-1])
             # Windows temp paths may use an 8.3 alias such as RUNNER~1, while
