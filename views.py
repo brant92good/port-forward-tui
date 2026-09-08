@@ -13,6 +13,16 @@ import uuid
 from focus_settings import read_scope
 
 
+def focus_command() -> list[str]:
+    from build_focus_helper import ensure_helper
+    try:
+        return [str(ensure_helper())]
+    except (OSError, subprocess.TimeoutExpired):
+        powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+        return [str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                "-File", str(Path(__file__).with_name("focus_existing.ps1"))]
+
+
 def mark_origin() -> str:
     """Give this launcher tab a unique title so its window can be found exactly."""
     title = "Shortcut | " + uuid.uuid4().hex
@@ -102,9 +112,8 @@ def focus_existing(directory: Path, probe_only: bool = False) -> bool:
     if not titles:
         return False
     payload = base64.b64encode(json.dumps(titles).encode("utf-8")).decode("ascii")
-    powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-    command = [str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-               "-File", str(Path(__file__).with_name("focus_existing.ps1")), "-TitlesBase64", payload]
+    executable = focus_command()
+    command = [*executable, "-TitlesBase64", payload]
     scope = read_scope(directory)
     command.extend(["-Scope", scope])
     if probe_only:
@@ -115,7 +124,8 @@ def focus_existing(directory: Path, probe_only: bool = False) -> bool:
         # Resolve the invoking Terminal window even for a global search. The user
         # may switch applications while the accessibility lookup is running.
         try:
-            command.extend(["-OriginTitle", mark_origin()])
+            origin_title = mark_origin()
+            command.extend(["-OriginTitle", origin_title])
         except OSError:
             return False
     command.append("-ProbeOnly")
@@ -131,9 +141,9 @@ def focus_existing(directory: Path, probe_only: bool = False) -> bool:
         if not isinstance(target.get("origin"), int) or not target["origin"]:
             return False
         titles = base64.b64encode(json.dumps([target["title"]]).encode()).decode("ascii")
-        return delayed_focus([str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                              "-File", str(Path(__file__).with_name("focus_existing.ps1")), "-TitlesBase64", titles,
+        return delayed_focus([*executable, "-TitlesBase64", titles,
                               "-WindowHandle", str(target["window"]), "-InvokeWindow", str(target["origin"]),
+                              "-ClosedTitle", origin_title,
                               "-AfterPid", str(os.getpid())])
     except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
         return False

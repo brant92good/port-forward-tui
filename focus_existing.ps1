@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$TitlesBase64,
     [string]$OriginTitle = '',
+    [string]$ClosedTitle = '',
     [ValidateSet('all', 'window')][string]$Scope = 'all',
     [long]$WindowHandle = 0,
     [long]$InvokeWindow = 0,
@@ -26,7 +27,6 @@ public static class PortsWindowFocus {
         if (-not $InvokeWindow) { exit 1 }
         $portsLauncher = Get-Process -Id $AfterPid -ErrorAction SilentlyContinue
         if ($portsLauncher -and -not $portsLauncher.WaitForExit(5000)) { exit 1 }
-        Start-Sleep -Milliseconds 300
         $portsForeground = [PortsWindowFocus]::GetForegroundWindow().ToInt64()
         if ($portsForeground -ne $InvokeWindow -and $portsForeground -ne $WindowHandle) { exit 1 }
     }
@@ -34,6 +34,24 @@ public static class PortsWindowFocus {
     $portsWindowCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'CASCADIA_HOSTING_WINDOW_CLASS')
     $portsWindows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $portsWindowCondition)
     $portsTabCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
+    if ($AfterPid -and $ClosedTitle) {
+        $portsCloseDeadline = [DateTime]::UtcNow.AddSeconds(2)
+        $portsClosed = $false
+        while ([DateTime]::UtcNow -lt $portsCloseDeadline) {
+            $portsForeground = [PortsWindowFocus]::GetForegroundWindow().ToInt64()
+            if ($portsForeground -ne $InvokeWindow -and $portsForeground -ne $WindowHandle) { exit 1 }
+            $portsPending = $false
+            try {
+                $portsOriginWindow = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$InvokeWindow)
+                foreach ($portsTab in $portsOriginWindow.FindAll([System.Windows.Automation.TreeScope]::Descendants, $portsTabCondition)) {
+                    if ($portsTab.Current.Name -ceq $ClosedTitle) { $portsPending = $true; break }
+                }
+            } catch [System.Windows.Automation.ElementNotAvailableException] { }
+            if (-not $portsPending) { $portsClosed = $true; break }
+            Start-Sleep -Milliseconds 10
+        }
+        if (-not $portsClosed) { exit 1 }
+    }
     $portsOriginHandle = 0
     if ($OriginTitle) {
         $portsOrigin = $null

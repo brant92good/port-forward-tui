@@ -38,6 +38,7 @@ commands directly:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe build_focus_helper.py
 .\.venv\Scripts\python.exe app.py --host workbox --check
 .\.venv\Scripts\python.exe terminal_profile.py
 ```
@@ -80,6 +81,12 @@ including in another Terminal window by default. If none can be focused, it open
 connected view. The dropdown continues to open a new view. Existing shortcut
 assignments are checked before saving. This is a Terminal key binding; it is
 active while Terminal has keyboard focus.
+
+Returning to a live view skips loading the TUI framework. The installer builds a
+small Windows focus helper using the included .NET Framework compiler, avoiding
+PowerShell startup on each switch. It waits for the temporary launcher tab to
+close before selecting the destination, with no fixed handoff delay. If the
+helper cannot be built, the PowerShell fallback remains available.
 
 Press **F2** in the app to choose **Focus scope**:
 

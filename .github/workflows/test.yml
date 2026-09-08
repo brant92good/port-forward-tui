@@ -22,4 +22,5 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - run: python build_focus_helper.py
       - run: python -m unittest discover -v

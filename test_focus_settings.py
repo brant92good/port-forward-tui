@@ -12,6 +12,11 @@ from views import ViewRegistration, focus_existing
 
 
 class PreferenceTests(unittest.TestCase):
+    def setUp(self):
+        helper = patch("views.focus_command", return_value=["FocusHelper.exe"])
+        helper.start()
+        self.addCleanup(helper.stop)
+
     def test_focus_handoff_uses_the_candidate_selected_before_launcher_closes(self):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder)
@@ -29,6 +34,7 @@ class PreferenceTests(unittest.TestCase):
                     self.assertIn("-AfterPid", args)
                     self.assertEqual(args[args.index("-WindowHandle") + 1], "100")
                     self.assertEqual(args[args.index("-InvokeWindow") + 1], "200")
+                    self.assertEqual(args[args.index("-ClosedTitle") + 1], "unique-launcher")
             finally:
                 registration.close()
 

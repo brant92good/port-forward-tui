@@ -17,6 +17,8 @@ if (-not (Test-Path -LiteralPath $portsPython)) {
 }
 & $portsPython -m pip install -r (Join-Path $portsRoot 'requirements.txt')
 if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+& $portsPython (Join-Path $portsRoot 'build_focus_helper.py')
+if ($LASTEXITCODE -ne 0) { throw 'Could not build the fast return shortcut helper.' }
 & $portsPython (Join-Path $portsRoot 'app.py') --host $HostName --check
 if ($LASTEXITCODE -ne 0) { throw 'Could not configure the SSH host.' }
 if (-not $NoTerminalProfile) {

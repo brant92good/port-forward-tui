@@ -155,6 +155,7 @@ time.sleep(60)
                 launcher = subprocess.Popen([sys._base_executable, "-c", code, folder],
                                             stdout=output, stderr=output,
                                             creationflags=subprocess.CREATE_NO_WINDOW)
+            first = None
             try:
                 deadline = time.monotonic() + 12
                 while time.monotonic() < deadline:
@@ -191,9 +192,14 @@ time.sleep(60)
                 except (OSError, ValueError):
                     pass
                 deadline = time.monotonic() + 5
-                while (directory / "endpoint.json").exists() and time.monotonic() < deadline:
+                from views import process_alive
+                # Removing the endpoint precedes interpreter shutdown; the
+                # daemon can still hold background.log open on Windows.
+                while ((directory / "endpoint.json").exists() or (first and process_alive(first["pid"]))) and time.monotonic() < deadline:
                     time.sleep(.1)
                 self.assertFalse((directory / "endpoint.json").exists())
+                if first:
+                    self.assertFalse(process_alive(first["pid"]))
 
 
 if __name__ == "__main__":
