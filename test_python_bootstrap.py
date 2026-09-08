@@ -41,7 +41,9 @@ $info | ConvertTo-Json -Compress
                                     creationflags=subprocess.CREATE_NO_WINDOW, timeout=45)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             info = json.loads(result.stdout.splitlines()[-1])
-            self.assertEqual(Path(info["prefix"]), target / ".venv")
+            # Windows temp paths may use an 8.3 alias such as RUNNER~1, while
+            # the child reports its long path. Verify filesystem identity.
+            self.assertTrue(os.path.samefile(info["prefix"], target / ".venv"))
             self.assertNotEqual(info["prefix"], info["base_prefix"])
             checked = subprocess.run([str(target / ".venv/Scripts/python.exe"), "-E", "-s", str(ROOT / "app.py"),
                                       "--check", "--host", "workbox", "--data-dir", str(Path(folder) / "data")],
