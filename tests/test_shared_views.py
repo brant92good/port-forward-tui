@@ -6,11 +6,11 @@ import unittest
 from unittest.mock import patch
 from textual.widgets import DataTable
 
-from app import PortApp, main
-from background import DaemonClient, Supervisor
-from forwarding import Forward, InstanceLock, Store
-from test_app import FakeManager
-from views import ViewRegistration, focus_existing, live_titles
+from port_forward_tui.ui import PortApp, main
+from port_forward_tui.background import DaemonClient, Supervisor
+from port_forward_tui.forwarding import Forward, InstanceLock, Store
+from tests.test_app import FakeManager
+from port_forward_tui.views import ViewRegistration, focus_existing, live_titles
 
 
 class SharedClient(DaemonClient):
@@ -80,8 +80,8 @@ class SharedStateTests(unittest.TestCase):
             old_ui_lock = InstanceLock(Path(folder))
             try:
                 with patch("sys.argv", ["app.py", "--data-dir", folder]), \
-                        patch("background.DaemonClient", side_effect=lambda *args: SharedClient(supervisor)), \
-                        patch("app.PortApp.run") as run:
+                        patch("port_forward_tui.background.DaemonClient", side_effect=lambda *args: SharedClient(supervisor)), \
+                        patch("port_forward_tui.ui.PortApp.run") as run:
                     self.assertEqual(main(), 0)
                     self.assertEqual(main(), 0)
                     self.assertEqual(run.call_count, 2)
@@ -135,7 +135,7 @@ class SharedKeyboardTests(unittest.IsolatedAsyncioTestCase):
 class FocusRegistryTests(unittest.TestCase):
     def test_title_works_before_terminal_vt_mode_is_enabled(self):
         with tempfile.TemporaryDirectory() as folder:
-            with patch("views.sys.stdout.isatty", return_value=True), patch("views.ctypes.WinDLL") as kernel:
+            with patch("port_forward_tui.views.sys.stdout.isatty", return_value=True), patch("port_forward_tui.views.ctypes.WinDLL") as kernel:
                 registration = ViewRegistration(Path(folder), "workbox")
                 kernel.return_value.SetConsoleTitleW.assert_called_once_with(registration.title)
             registration.close()
@@ -151,15 +151,15 @@ class FocusRegistryTests(unittest.TestCase):
     def test_dead_views_are_excluded_and_focus_is_explicit(self):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder)
-            with patch("views.subprocess.run") as run:
+            with patch("port_forward_tui.views.subprocess.run") as run:
                 self.assertFalse(focus_existing(directory))
                 run.assert_not_called()
             registration = ViewRegistration(directory, "workbox")
-            with patch("views.subprocess.run") as run:
+            with patch("port_forward_tui.views.subprocess.run") as run:
                 run.return_value.returncode = 0
                 self.assertTrue(focus_existing(directory, probe_only=True))
                 self.assertIn("-ProbeOnly", run.call_args.args[0])
-            with patch("views.process_alive", return_value=False):
+            with patch("port_forward_tui.views.process_alive", return_value=False):
                 self.assertEqual(live_titles(directory), [])
             self.assertFalse(registration.path.exists())
 

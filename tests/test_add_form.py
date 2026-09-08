@@ -3,9 +3,9 @@ import tempfile
 import unittest
 
 from textual.widgets import Input
-from app import EditForward, PortApp
-from forwarding import Store
-from test_app import FakeManager
+from port_forward_tui.ui import EditForward, PortApp
+from port_forward_tui.forwarding import Store
+from tests.test_app import FakeManager
 
 
 class AddFormTests(unittest.IsolatedAsyncioTestCase):

@@ -4,16 +4,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from app import PortApp
-from focus_settings import read_scope, save_scope
-from forwarding import Store
-from test_app import FakeManager
-from views import ViewRegistration, focus_existing
+from port_forward_tui.ui import PortApp
+from port_forward_tui.focus_settings import read_scope, save_scope
+from port_forward_tui.forwarding import Store
+from tests.test_app import FakeManager
+from port_forward_tui.views import ViewRegistration, focus_existing
 
 
 class PreferenceTests(unittest.TestCase):
     def setUp(self):
-        helper = patch("views.focus_command", return_value=["powershell.exe", "-File", "focus_existing.ps1"])
+        helper = patch("port_forward_tui.views.focus_command", return_value=["powershell.exe", "-File", "focus_existing.ps1"])
         helper.start()
         self.addCleanup(helper.stop)
 
@@ -22,8 +22,8 @@ class PreferenceTests(unittest.TestCase):
             directory = Path(folder)
             registration = ViewRegistration(directory, "workbox")
             try:
-                with patch("views.mark_origin", return_value="unique-launcher"), \
-                        patch("views.subprocess.run") as probe, patch("views.delayed_focus", return_value=True) as launch:
+                with patch("port_forward_tui.views.mark_origin", return_value="unique-launcher"), \
+                        patch("port_forward_tui.views.subprocess.run") as probe, patch("port_forward_tui.views.delayed_focus", return_value=True) as launch:
                     probe.return_value.returncode = 0
                     probe.return_value.stdout = json.dumps({"title": registration.title, "window": 100, "origin": 200})
                     self.assertTrue(focus_existing(directory))
@@ -43,13 +43,13 @@ class PreferenceTests(unittest.TestCase):
             directory = Path(folder)
             registration = ViewRegistration(directory, "workbox")
             try:
-                with patch("views.mark_origin", side_effect=OSError("No console")), \
-                        patch("views.subprocess.run") as probe, patch("views.delayed_focus") as launch:
+                with patch("port_forward_tui.views.mark_origin", side_effect=OSError("No console")), \
+                        patch("port_forward_tui.views.subprocess.run") as probe, patch("port_forward_tui.views.delayed_focus") as launch:
                     self.assertFalse(focus_existing(directory))
                     probe.assert_not_called()
                     launch.assert_not_called()
-                with patch("views.mark_origin", return_value="unique-launcher"), \
-                        patch("views.subprocess.run") as probe, patch("views.delayed_focus") as launch:
+                with patch("port_forward_tui.views.mark_origin", return_value="unique-launcher"), \
+                        patch("port_forward_tui.views.subprocess.run") as probe, patch("port_forward_tui.views.delayed_focus") as launch:
                     probe.return_value.returncode = 0
                     for origin in (None, 0):
                         with self.subTest(origin=origin):
@@ -64,8 +64,8 @@ class PreferenceTests(unittest.TestCase):
             directory = Path(folder)
             registration = ViewRegistration(directory, "workbox")
             try:
-                with patch("views.mark_origin") as mark, patch("views.subprocess.run") as probe, \
-                        patch("views.delayed_focus") as launch:
+                with patch("port_forward_tui.views.mark_origin") as mark, patch("port_forward_tui.views.subprocess.run") as probe, \
+                        patch("port_forward_tui.views.delayed_focus") as launch:
                     probe.return_value.returncode = 0
                     self.assertTrue(focus_existing(directory, probe_only=True))
                     self.assertNotIn("-OriginTitle", probe.call_args.args[0])
@@ -95,14 +95,14 @@ class PreferenceTests(unittest.TestCase):
             registration = ViewRegistration(directory, "workbox")
             try:
                 save_scope(directory, "window")
-                with patch("views.mark_origin", return_value="unique-launcher"), patch("views.subprocess.run") as run:
+                with patch("port_forward_tui.views.mark_origin", return_value="unique-launcher"), patch("port_forward_tui.views.subprocess.run") as run:
                     run.return_value.returncode = 1
                     self.assertFalse(focus_existing(directory))
                     args = run.call_args.args[0]
                     self.assertEqual(args[args.index("-OriginTitle") + 1], "unique-launcher")
                     self.assertEqual(args[args.index("-Scope") + 1], "window")
                     self.assertEqual(run.call_count, 1)
-                with patch("views.mark_origin", side_effect=OSError("No console")), patch("views.subprocess.run") as run:
+                with patch("port_forward_tui.views.mark_origin", side_effect=OSError("No console")), patch("port_forward_tui.views.subprocess.run") as run:
                     self.assertFalse(focus_existing(directory))
                     run.assert_not_called()
             finally:

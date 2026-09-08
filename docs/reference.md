@@ -215,7 +215,7 @@ They do not require a reachable SSH server. To opt into a real transport check
 against an existing SSH alias (whose server listens on remote loopback port 22):
 
 ```powershell
-.\.venv\Scripts\python.exe check_live.py --host workbox
+.\.venv\Scripts\python.exe scripts/check_live.py --host workbox
 ```
 
 This creates an isolated temporary forward, exits its initiating client,
@@ -234,4 +234,4 @@ and [OpenSSH local forwarding](https://man.openbsd.org/ssh#L).
 
 ## License
 
-[MIT](LICENSE).
+[MIT](../LICENSE).

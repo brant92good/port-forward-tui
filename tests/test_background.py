@@ -10,10 +10,10 @@ import tempfile
 import time
 import unittest
 
-from app import PortApp
-from background import DaemonClient, Supervisor, exchange
-from forwarding import Forward, Store
-from test_app import FakeManager
+from port_forward_tui.ui import PortApp
+from port_forward_tui.background import DaemonClient, Supervisor, exchange
+from port_forward_tui.forwarding import Forward, Store
+from tests.test_app import FakeManager
 
 
 class BackgroundSettingsTests(unittest.TestCase):
@@ -86,7 +86,7 @@ class DetachedProcessTests(unittest.TestCase):
             store.load()
             store.host = "workbox"
             store.save(store.forwards)
-            server = subprocess.Popen([sys._base_executable, str(Path(__file__).with_name("background.py")),
+            server = subprocess.Popen([sys._base_executable, str((Path(__file__).resolve().parents[1] / "port_forward_tui/background.py")),
                                        "--serve", "--data-dir", folder],
                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                                       creationflags=subprocess.CREATE_NO_WINDOW)
@@ -145,7 +145,7 @@ class DetachedProcessTests(unittest.TestCase):
             # No SSH connections are started in this test.
             code = """from pathlib import Path
 import sys,time
-from background import DaemonClient
+from port_forward_tui.background import DaemonClient
 client = DaemonClient('workbox', Path(sys.argv[1]))
 print('ready', flush=True)
 time.sleep(60)
@@ -192,7 +192,7 @@ time.sleep(60)
                 except (OSError, ValueError):
                     pass
                 deadline = time.monotonic() + 5
-                from views import process_alive
+                from port_forward_tui.views import process_alive
                 # Removing the endpoint precedes interpreter shutdown; the
                 # daemon can still hold background.log open on Windows.
                 while ((directory / "endpoint.json").exists() or (first and process_alive(first["pid"]))) and time.monotonic() < deadline:

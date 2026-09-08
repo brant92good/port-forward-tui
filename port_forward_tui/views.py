@@ -10,17 +10,17 @@ import sys
 import time
 import uuid
 
-from focus_settings import read_scope
+from port_forward_tui.focus_settings import read_scope
 
 
 def focus_command() -> list[str]:
-    from build_focus_helper import ensure_helper
+    from port_forward_tui.build_focus_helper import ensure_helper
     try:
         return [str(ensure_helper())]
     except (OSError, subprocess.TimeoutExpired):
         powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
         return [str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                "-File", str(Path(__file__).with_name("focus_existing.ps1"))]
+                "-File", str((Path(__file__).resolve().parents[1] / "native/focus_existing.ps1"))]
 
 
 def mark_origin() -> str:

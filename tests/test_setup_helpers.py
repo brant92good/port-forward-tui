@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 POWERSHELL = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
 
 
@@ -20,7 +20,7 @@ Get-SetupHost -SettingsPath $Settings -NonInteractive
 """, encoding='utf-8-sig')
             settings = Path(folder) / 'settings.json'
             args = [str(POWERSHELL), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
-                    str(ROOT / 'setup_helpers.ps1'), str(settings)]
+                    str(ROOT / 'scripts/setup_helpers.ps1'), str(settings)]
             missing = subprocess.run(args, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=8)
             self.assertNotEqual(missing.returncode, 0)
             self.assertIn('remote computer is required', missing.stderr)

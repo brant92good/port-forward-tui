@@ -5,8 +5,8 @@ import subprocess
 import unittest
 import uuid
 
-from build_focus_helper import ensure_helper
-from views import native_focus
+from port_forward_tui.build_focus_helper import ensure_helper
+from port_forward_tui.views import native_focus
 
 
 class NativeHelperTests(unittest.TestCase):

@@ -15,7 +15,10 @@ import sys
 import threading
 import time
 
-from forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, port, validate_host
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from port_forward_tui.forwarding import DATA_DIR, Forward, InstanceLock, Store, TunnelManager, port, validate_host
 
 PROTOCOL = 1
 MAX_RESPONSE = 2 * 1024 * 1024
@@ -45,9 +48,9 @@ def launch_daemon(directory: Path):
     command = [executable, "-E", "-s", str(Path(__file__).resolve()), "--serve", "--data-dir", str(directory.resolve())]
     flags = (subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
              | subprocess.CREATE_BREAKAWAY_FROM_JOB)
-    log_path = directory / "background.log"
+    log_path = directory / "port_forward_tui.background.log"
     if log_path.exists() and log_path.stat().st_size > 256 * 1024:
-        log_path.replace(directory / "background.previous.log")
+        log_path.replace(directory / "port_forward_tui.background.previous.log")
     with log_path.open("ab") as log:
         try:
             process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
@@ -71,7 +74,7 @@ def ensure_daemon(directory: Path) -> dict:
                 return exchange(directory, "status")
             except (OSError, ValueError, KeyError):
                 time.sleep(.1)
-        raise OSError(f"Background manager did not start. See {directory / 'background.log'}")
+        raise OSError(f"Background manager did not start. See {directory / 'port_forward_tui.background.log'}")
     finally:
         # poll reaps a losing startup process without terminating the detached winner.
         process.poll()

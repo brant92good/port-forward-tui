@@ -9,10 +9,10 @@ import tempfile
 import time
 import unittest
 
-from background import exchange
-from forwarding import Store
+from port_forward_tui.background import exchange
+from port_forward_tui.forwarding import Store
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def command(directory, *args):
@@ -68,7 +68,7 @@ class SharedCommands(unittest.TestCase):
         store = Store(self.directory)
         store.host = 'workbox'
         store.save([])
-        self.server = subprocess.Popen([sys._base_executable, '-E', '-s', str(ROOT / 'background.py'),
+        self.server = subprocess.Popen([sys._base_executable, '-E', '-s', str(ROOT / 'port_forward_tui/background.py'),
                                         '--serve', '--data-dir', str(self.directory)],
                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                        creationflags=subprocess.CREATE_NO_WINDOW)

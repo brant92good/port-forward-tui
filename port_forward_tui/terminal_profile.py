@@ -27,7 +27,7 @@ def main():
         data = json.loads(original)
     except ValueError:
         raise SystemExit("Settings contain JSON comments or invalid JSON. Add a Terminal profile manually using the README command; the file was not changed.")
-    root = Path(__file__).resolve().parent
+    root = Path(__file__).resolve().parents[1]
     python = root / ".venv/Scripts/python.exe"
     if not python.exists():
         python = Path(sys.executable)

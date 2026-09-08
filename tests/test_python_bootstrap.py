@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 POWERSHELL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
 
 
@@ -37,7 +37,7 @@ $info | ConvertTo-Json -Compress
             script = script.replace(". $Bootstrap", "$ErrorActionPreference = 'Stop'\n. $Bootstrap")
             env = dict(os.environ, PYTHONHOME=str(Path(folder) / "wrong-home"), PYTHONPATH=str(Path(folder) / "unrelated-project"))
             env["PATH"] = os.pathsep.join([str(Path(os.environ["SystemRoot"]) / "System32"), os.environ["SystemRoot"]])
-            result = self.run_script(folder, script, ROOT / "python_bootstrap.ps1", target, sys._base_executable, env=env)
+            result = self.run_script(folder, script, ROOT / "scripts/python_bootstrap.ps1", target, sys._base_executable, env=env)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             info = json.loads(result.stdout.splitlines()[-1])
             # Windows temp paths may use an 8.3 alias such as RUNNER~1, while
@@ -56,7 +56,7 @@ $info | ConvertTo-Json -Compress
             marker = target / "keep.txt"
             marker.write_text("user data")
             script = "param([string]$Bootstrap,[string]$Root)\n$ErrorActionPreference = 'Stop'\n. $Bootstrap\nInitialize-AppPython -Root $Root\n"
-            result = self.run_script(folder, script, ROOT / "python_bootstrap.ps1", folder)
+            result = self.run_script(folder, script, ROOT / "scripts/python_bootstrap.ps1", folder)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("incomplete", result.stderr)
             self.assertEqual(marker.read_text(), "user data")
@@ -64,7 +64,7 @@ $info | ConvertTo-Json -Compress
     def test_explicit_missing_python_reports_actionable_error(self):
         with tempfile.TemporaryDirectory() as folder:
             script = "param([string]$Bootstrap,[string]$Python)\n$ErrorActionPreference = 'Stop'\n. $Bootstrap\nResolve-AppPython -Python $Python\n"
-            result = self.run_script(folder, script, ROOT / "python_bootstrap.ps1", Path(folder) / "missing.exe")
+            result = self.run_script(folder, script, ROOT / "scripts/python_bootstrap.ps1", Path(folder) / "missing.exe")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("No usable Windows Python 3.12+", result.stderr)
             self.assertIn("-Python", result.stderr)
@@ -72,7 +72,7 @@ $info | ConvertTo-Json -Compress
     def test_auto_discovery_finds_supported_windows_python(self):
         with tempfile.TemporaryDirectory() as folder:
             script = "param([string]$Bootstrap)\n$ErrorActionPreference = 'Stop'\n. $Bootstrap\nResolve-AppPython | ConvertTo-Json -Compress\n"
-            result = self.run_script(folder, script, ROOT / "python_bootstrap.ps1")
+            result = self.run_script(folder, script, ROOT / "scripts/python_bootstrap.ps1")
             self.assertEqual(result.returncode, 0, result.stderr)
             info = json.loads(result.stdout)
             self.assertEqual(info["platform"], "win32")

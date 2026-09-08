@@ -14,8 +14,8 @@ from unittest.mock import patch
 
 from textual.widgets import DataTable, Input, Static
 
-from app import Confirm, EditForward, PortApp
-from forwarding import Forward, InstanceLock, ProcessJob, Store, TunnelManager, listeners, quick_ports, ssh_command
+from port_forward_tui.ui import Confirm, EditForward, PortApp
+from port_forward_tui.forwarding import Forward, InstanceLock, ProcessJob, Store, TunnelManager, listeners, quick_ports, ssh_command
 
 
 class FakeManager:
@@ -87,7 +87,7 @@ class SettingsTests(unittest.TestCase):
             store.load()
             before = store.path.read_bytes()
             rules = list(store.forwards)
-            with patch("forwarding.os.replace", side_effect=OSError("disk error")):
+            with patch("port_forward_tui.forwarding.os.replace", side_effect=OSError("disk error")):
                 with self.assertRaises(OSError):
                     store.save([])
             self.assertEqual(store.path.read_bytes(), before)
@@ -117,7 +117,7 @@ class SettingsTests(unittest.TestCase):
 class ProcessTests(unittest.TestCase):
     def test_abrupt_parent_exit_removes_tunnel_child(self):
         code = """import subprocess,sys,time
-from forwarding import ProcessJob
+from port_forward_tui.forwarding import ProcessJob
 job = ProcessJob()
 child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], creationflags=subprocess.CREATE_NO_WINDOW)
 job.attach(child)
@@ -188,7 +188,7 @@ time.sleep(60)
             manager = TunnelManager("unused", Path(folder))
             command = [sys._base_executable, "-c", f"import socket,time; s=socket.socket(); s.bind(('127.0.0.1',{number})); s.listen(); time.sleep(60)"]
             try:
-                with patch("forwarding.ssh_command", return_value=command):
+                with patch("port_forward_tui.forwarding.ssh_command", return_value=command):
                     manager.start(rule)
                     deadline = time.monotonic() + 5
                     while manager.status(rule.id) != "ON" and time.monotonic() < deadline:

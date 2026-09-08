@@ -6,9 +6,9 @@ from pathlib import Path
 import shutil
 import sys
 
-from forwarding import DATA_DIR, SSH, Store
+from port_forward_tui.forwarding import DATA_DIR, SSH, Store
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def check(key, passed, message, fix='', *, warning=False):

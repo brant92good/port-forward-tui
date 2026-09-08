@@ -24,12 +24,12 @@ connection; a background process owns it so closing the screen does not stop it.
 
 ## Code map and invariants
 
-- `app.py` / `app.tcss`: screen, keyboard actions, add/edit forms, help.
-- `ports.py` / `diagnostics.py`: headless commands and local checks.
-- `forwarding.py`: file schema, SSH arguments, owned Windows process jobs.
-- `background.py`: authenticated local control server and serialized writes.
-- `launch.py`, `views.py`, `FocusHelper.cs`: lightweight return shortcut.
-- `install.ps1`, `python_bootstrap.ps1`: private environment and Terminal entry.
+- `port_forward_tui/ui.py` / `port_forward_tui/app.tcss`: screen, keyboard actions, add/edit forms, help.
+- `port_forward_tui/cli.py` / `port_forward_tui/diagnostics.py`: headless commands and local checks.
+- `port_forward_tui/forwarding.py`: file schema, SSH arguments, owned Windows process jobs.
+- `port_forward_tui/background.py`: authenticated local control server and serialized writes.
+- `port_forward_tui/launch.py`, `port_forward_tui/views.py`, `native/FocusHelper.cs`: lightweight return shortcut.
+- `install.ps1`, `scripts/python_bootstrap.ps1`: private environment and Terminal entry.
 
 Keep the existing-view return path free of Textual imports. Preserve concurrent
 favorite edits through the server. Never infer an SSH connection from a UI row
@@ -41,7 +41,7 @@ paths. Use isolated `--data-dir` folders and explicit cleanup.
 
 Run `.\.venv\Scripts\python.exe -E -s -m unittest discover -v`. Tests cover real
 local control-server requests and keyboard flows without needing a remote host.
-`check_live.py --host ALIAS` is an opt-in real SSH check. Desktop focus tests
+`scripts/check_live.py --host ALIAS` is an opt-in real SSH check. Desktop focus tests
 live in the companion terminal-workspace repository and move real windows.
 Screenshots: `scripts/capture_screenshots.py` renders the actual UI with clearly
 labeled simulated data. Review images before publishing.
@@ -50,3 +50,8 @@ This public repository contains no personal setup. When it is included as a
 submodule (a repository pinned inside another), publish this commit first, then
 update the parent's recorded commit. Keep examples generic and explain new
 terms before asking a beginner to make a choice.
+
+Root app.py and ports.py are stable command entry points. Application code
+lives in port_forward_tui/, automated checks in tests/, native focus code in
+native/, and setup/live-check utilities in scripts/. Keep new files with their
+responsible component rather than adding implementation files to the root.

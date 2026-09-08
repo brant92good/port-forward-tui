@@ -7,8 +7,11 @@ import sys
 import tempfile
 import time
 
-from background import DaemonClient, exchange
-from forwarding import Forward, Store, listeners, validate_host
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from port_forward_tui.background import DaemonClient, exchange
+from port_forward_tui.forwarding import Forward, Store, listeners, validate_host
 
 
 def main():
@@ -27,15 +30,15 @@ def main():
         store.save([rule])
         client_code = """from pathlib import Path
 import sys
-from background import DaemonClient
-from forwarding import Store
+from port_forward_tui.background import DaemonClient
+from port_forward_tui.forwarding import Store
 store = Store(Path(sys.argv[1])); store.load()
 client = DaemonClient(store.host, store.directory)
 client.start(store.forwards[0])
 """
         try:
             subprocess.run([sys._base_executable, "-c", client_code, folder], check=True,
-                           cwd=Path(__file__).parent, timeout=15,
+                           cwd=ROOT, timeout=15,
                            creationflags=subprocess.CREATE_NO_WINDOW)
             client = DaemonClient(store.host, directory)
             deadline = time.monotonic() + 15

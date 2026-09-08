@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 import sys
 
-from forwarding import DATA_DIR, InstanceLock, Store, TunnelManager, validate_host
+from port_forward_tui.forwarding import DATA_DIR, InstanceLock, Store, TunnelManager, validate_host
 
 
 def main(app_factory=None):
@@ -19,7 +19,7 @@ def main(app_factory=None):
     lock = manager = daemon_lock = registration = None
     try:
         if options.stop_all or options.stop_daemon:
-            from background import exchange
+            from port_forward_tui.background import exchange
             exchange(options.data_dir, "shutdown" if options.stop_daemon else "stop_all")
             print("Background tunnels stopped.")
             return 0
@@ -28,7 +28,7 @@ def main(app_factory=None):
         if options.host:
             validate_host(options.host)
             if store.host != options.host:
-                from background import exchange
+                from port_forward_tui.background import exchange
                 try:
                     existing = exchange(options.data_dir, "status")
                 except (OSError, ValueError, KeyError):
@@ -43,22 +43,22 @@ def main(app_factory=None):
         if not store.host:
             raise ValueError("Choose an SSH target on first launch: app.py --host YOUR_SSH_ALIAS")
         if options.focus_existing and not options.foreground:
-            from views import focus_existing
+            from port_forward_tui.views import focus_existing
             if focus_existing(options.data_dir):
                 return 0
         if store.keep_alive and not options.foreground:
-            from background import DaemonClient
+            from port_forward_tui.background import DaemonClient
             manager = DaemonClient(store.host, options.data_dir)
         else:
             lock = InstanceLock(options.data_dir)
             daemon_lock = InstanceLock(options.data_dir, "daemon.lock")
             manager = TunnelManager(store.host, options.data_dir)
         if app_factory is None:
-            from app import PortApp
+            from port_forward_tui.ui import PortApp
             app_factory = PortApp
         application = app_factory(store, manager)
         if getattr(manager, "persistent", False):
-            from views import ViewRegistration
+            from port_forward_tui.views import ViewRegistration
             registration = ViewRegistration(options.data_dir, store.host)
             application.view_registration = registration
         application.run()

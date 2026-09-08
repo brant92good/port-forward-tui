@@ -20,8 +20,8 @@ From an installed checkout:
 ```
 
 [Current CI](https://github.com/brant92good/port-forward-tui/actions/workflows/test.yml),
-[keyboard tests](../test_app.py), [command tests](../test_ports.py) and
-[background tests](../test_background.py) are available for inspection.
+[keyboard tests](../tests/test_app.py), [command tests](../tests/test_ports.py) and
+[background tests](../tests/test_background.py) are available for inspection.
 
 ## Real SSH and terminal closure
 
@@ -31,10 +31,10 @@ explicit stop released the port. Repeat with a working SSH name whose server
 has SSH listening on remote loopback port 22:
 
 ```powershell
-.\.venv\Scripts\python.exe -E -s check_live.py --host workbox
+.\.venv\Scripts\python.exe -E -s scripts/check_live.py --host workbox
 ```
 
-[check_live.py](../check_live.py) uses a temporary data folder and cleans up
+[check_live.py](../scripts/check_live.py) uses a temporary data folder and cleans up
 its own connection. It connects to your server, so this is an opt-in check.
 
 A separate Windows Terminal check opened an isolated window, started a forward

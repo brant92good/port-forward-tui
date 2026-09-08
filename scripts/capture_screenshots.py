@@ -10,9 +10,9 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from app import PortApp
+from port_forward_tui.ui import PortApp
 from textual import events
-from forwarding import Forward, Store
+from port_forward_tui.forwarding import Forward, Store
 
 
 class DemoConnections:

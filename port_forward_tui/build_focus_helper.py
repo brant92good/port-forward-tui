@@ -5,11 +5,11 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def ensure_helper():
-    source = ROOT / "FocusHelper.cs"
+    source = ROOT / "native/FocusHelper.cs"
     revision = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
     output = ROOT / "build" / ("FocusHelper-" + revision + ".exe")
     if output.is_file():
