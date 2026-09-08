@@ -48,7 +48,7 @@ def delayed_focus(command: list[str]) -> bool:
         return False
 
 
-def native_focus(command: list[str]) -> bool:
+def native_focus(command: list[str], trace=None) -> bool:
     """One detached helper probes, signals a match, then completes the handoff."""
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
@@ -65,6 +65,8 @@ def native_focus(command: list[str]) -> bool:
     handle = None
     process = None
     try:
+        if trace:
+            trace.mark("helper_spawn")
         process = subprocess.Popen([*command, "-ReadyEvent", name, "-AfterPid", str(os.getpid())],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
             creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_BREAKAWAY_FROM_JOB)
