@@ -126,7 +126,7 @@ public static class FocusHelper {
                     var target = tabs.FirstOrDefault(t => t.title == title && (!local || t.window == origin));
                     if (target == null) continue;
                     if (options.TryGetValue("-ReadyEvent", out value)) {
-                        if (origin == 0 || !Allowed(origin, target.window)) return 1;
+                        if (origin == 0) return 1;
                         // Let the Python launcher exit, then finish in this same
                         // process instead of starting a second focus helper.
                         using (var ready = EventWaitHandle.OpenExisting(value)) ready.Set();
