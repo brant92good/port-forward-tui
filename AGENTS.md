@@ -8,6 +8,9 @@ connection; a background process owns it so closing the screen does not stop it.
 
 - Read README.md for setup and command examples. Run `./doctor.ps1 --json` for
   local prerequisites. It does not install, write settings, or contact SSH.
+- Detailed first-use help is in docs/getting-started.md; the CLI contract is
+  in docs/automation.md. docs/verification.md distinguishes test results from
+  untested environments. Keep public claims within that evidence.
 - Use `./ports.ps1 list --json` to inspect favorites. Use the documented save,
   start, stop and delete commands rather than screen automation or editing live
   JSON. Read IDs from results. `UNKNOWN` means no live status was observed;
