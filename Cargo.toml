@@ -28,7 +28,7 @@ fs2 = "0.4"
 dirs = "6"
 glob = "0.3"
 which = "8"
-ctrlc = "3"
+ctrlc = { version = "3", features = ["termination"] }
 unicode-width = "0.2"
 socket2 = { version = "0.6", features = ["all"] }
 

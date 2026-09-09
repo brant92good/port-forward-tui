@@ -246,6 +246,10 @@ fn keyboard_form_multihost_concurrent_view_and_detach() {
             .iter()
             .any(|rule| rule.name == "Other API")
     });
+    // Persistence precedes the command response. Wait for the new main-view
+    // row, which is polled after that response, before sending the next change.
+    first.expect("Saved connections");
+    first.expect("Other API");
     first.send("s");
     first.expect("every listed server");
     first.send("y");

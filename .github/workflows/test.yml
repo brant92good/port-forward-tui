@@ -1,4 +1,4 @@
-name: Windows tests
+name: Legacy Python compatibility
 
 on:
   push:

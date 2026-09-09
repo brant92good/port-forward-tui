@@ -14,6 +14,11 @@ use ratatui::{
     style::{Color, Style},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
+#[cfg(unix)]
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 use std::{
     io::{self, IsTerminal, Stderr},
     time::Duration,
@@ -22,6 +27,24 @@ pub type Screen = Terminal<CrosstermBackend<Stderr>>;
 pub const ACCENT: Color = Color::Rgb(96, 218, 224);
 pub const MUTED: Color = Color::Rgb(153, 164, 182);
 pub const BG: Color = Color::Rgb(17, 22, 32);
+#[cfg(unix)]
+static TERMINATED: AtomicBool = AtomicBool::new(false);
+#[cfg(unix)]
+static SIGNAL_HANDLER: OnceLock<Result<(), String>> = OnceLock::new();
+
+#[cfg(unix)]
+fn install_signal_handler() -> Result<()> {
+    // A picker can return and enter the main screen in the same process. Install
+    // once, and keep a received termination request across that transition.
+    let installed = SIGNAL_HANDLER.get_or_init(|| {
+        ctrlc::set_handler(|| TERMINATED.store(true, Ordering::Relaxed))
+            .map_err(|error| error.to_string())
+    });
+    if let Err(error) = installed {
+        anyhow::bail!("Cannot register terminal cleanup handler: {error}");
+    }
+    Ok(())
+}
 pub fn panel(title: &str) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
@@ -38,6 +61,8 @@ impl Session {
             io::stdin().is_terminal() && io::stderr().is_terminal(),
             "This screen needs an interactive terminal. Use --json commands in scripts."
         );
+        #[cfg(unix)]
+        install_signal_handler()?;
         terminal::enable_raw_mode()?;
         let result = (|| -> Result<Screen> {
             execute!(
@@ -76,6 +101,15 @@ impl Drop for Session {
     }
 }
 pub fn key() -> Result<Option<Event>> {
+    #[cfg(unix)]
+    if TERMINATED.load(Ordering::Relaxed) {
+        // Follow the ordinary quit path so owned foreground SSH process groups
+        // are dropped/stopped. Do not exit directly from a signal callback.
+        return Ok(Some(Event::Key(KeyEvent::new(
+            KeyCode::Char('q'),
+            KeyModifiers::CONTROL,
+        ))));
+    }
     if !event::poll(Duration::from_millis(50))? {
         return Ok(None);
     }
@@ -195,6 +229,38 @@ impl Input {
         }
     }
 }
+pub fn render_form(
+    frame: &mut ratatui::Frame,
+    title: &str,
+    fields: &[(&str, String)],
+    inputs: &[Input],
+    selected: usize,
+    hint: &str,
+) {
+    let area = centered(frame.area(), 78, (fields.len() * 3 + 6) as u16);
+    frame.render_widget(Clear, area);
+    frame.render_widget(panel(title), area);
+    let mut constraints = vec![Constraint::Length(3); fields.len()];
+    constraints.push(Constraint::Min(2));
+    let rows = Layout::vertical(constraints).margin(1).split(area);
+    for (index, ((label, _), input)) in fields.iter().zip(inputs).enumerate() {
+        let style = Style::default().fg(if index == selected { ACCENT } else { MUTED });
+        frame.render_widget(
+            Paragraph::new(input.value.as_str())
+                .block(Block::bordered().title(*label))
+                .style(style),
+            rows[index],
+        );
+    }
+    frame.render_widget(
+        Paragraph::new(format!(
+            "{hint}\nTab/Shift+Tab move · Enter saves · Esc cancels"
+        ))
+        .style(Style::default().fg(MUTED))
+        .wrap(Wrap { trim: false }),
+        rows[fields.len()],
+    );
+}
 pub fn form(
     screen: &mut Screen,
     title: &str,
@@ -208,31 +274,7 @@ pub fn form(
         .collect::<Vec<_>>();
     let mut selected = initial.min(inputs.len().saturating_sub(1));
     loop {
-        screen.draw(|frame| {
-            let area = centered(frame.area(), 78, (fields.len() * 3 + 6) as u16);
-            frame.render_widget(Clear, area);
-            frame.render_widget(panel(title), area);
-            let mut constraints = vec![Constraint::Length(3); fields.len()];
-            constraints.push(Constraint::Min(2));
-            let rows = Layout::vertical(constraints).margin(1).split(area);
-            for (index, ((label, _), input)) in fields.iter().zip(&inputs).enumerate() {
-                let style = Style::default().fg(if index == selected { ACCENT } else { MUTED });
-                frame.render_widget(
-                    Paragraph::new(input.value.as_str())
-                        .block(Block::bordered().title(*label))
-                        .style(style),
-                    rows[index],
-                );
-            }
-            frame.render_widget(
-                Paragraph::new(format!(
-                    "{hint}\nTab/Shift+Tab move · Enter saves · Esc cancels"
-                ))
-                .style(Style::default().fg(MUTED))
-                .wrap(Wrap { trim: false }),
-                rows[fields.len()],
-            );
-        })?;
+        screen.draw(|frame| render_form(frame, title, fields, &inputs, selected, hint))?;
         match key()? {
             Some(Event::Key(key)) if quit(key) || key.code == KeyCode::Esc => return Ok(None),
             Some(Event::Key(key)) => match key.code {

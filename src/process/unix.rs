@@ -78,10 +78,10 @@ pub fn listeners(pids: &[u32]) -> Result<Listeners> {
         if fields.len() <= 9 || fields[3] != "0A" {
             continue;
         }
-        if let Some((_, port)) = fields[1].split_once(':') {
-            if let Ok(port) = u16::from_str_radix(port, 16) {
-                sockets.insert(fields[9].to_owned(), port);
-            }
+        if let Some((_, port)) = fields[1].split_once(':')
+            && let Ok(port) = u16::from_str_radix(port, 16)
+        {
+            sockets.insert(fields[9].to_owned(), port);
         }
     }
     let mut result = HashSet::new();
@@ -98,10 +98,9 @@ pub fn listeners(pids: &[u32]) -> Result<Listeners> {
                 if let Some(inode) = target
                     .strip_prefix("socket:[")
                     .and_then(|text| text.strip_suffix(']'))
+                    && let Some(&port) = sockets.get(inode)
                 {
-                    if let Some(&port) = sockets.get(inode) {
-                        result.insert((pid, port));
-                    }
+                    result.insert((pid, port));
                 }
             }
         }
@@ -140,12 +139,11 @@ pub fn listeners(pids: &[u32]) -> Result<Listeners> {
     for line in String::from_utf8_lossy(&output).lines() {
         if let Some(pid) = line.strip_prefix('p') {
             owner = pid.parse::<u32>().ok().filter(|pid| wanted.contains(pid));
-        } else if let (Some(pid), Some(endpoint)) = (owner, line.strip_prefix('n')) {
-            if let Some((_, port)) = endpoint.rsplit_once(':') {
-                if let Ok(port) = port.parse::<u16>() {
-                    result.insert((pid, port));
-                }
-            }
+        } else if let (Some(pid), Some(endpoint)) = (owner, line.strip_prefix('n'))
+            && let Some((_, port)) = endpoint.rsplit_once(':')
+            && let Ok(port) = port.parse::<u16>()
+        {
+            result.insert((pid, port));
         }
     }
     Ok(result)

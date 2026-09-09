@@ -1,144 +1,132 @@
-<img src="docs/brand/mark.svg" width="112" align="right" alt="Port Forward TUI logo">
+<img src="docs/brand/mark.svg" width="100" align="right" alt="Ports logo">
 
-# Port Forward TUI
+# Ports
 
-Your remote dev server, on localhost.
+**SSH forwards you can save, control from any tab, and leave running.**
 
-Your app runs on another computer at port **8000**. Type **8000** here, press
-**Enter**, and open `http://localhost:8000` on your laptop. Save a name for next
-time and keep connections to several servers in one list.
+Keep dev servers, notebooks, and dashboards from several machines in one
+keyboard-driven list. Reopen a favorite with Enter, choose another local port
+when one is busy, and reconnect after network interruptions—even with the
+terminal closed.
 
-[![Checks](https://github.com/brant92good/port-forward-tui/actions/workflows/test.yml/badge.svg)](https://github.com/brant92good/port-forward-tui/actions/workflows/test.yml)
-[![Windows](https://img.shields.io/badge/platform-Windows-65d6be)](docs/verification.md)
-[![MIT license](https://img.shields.io/badge/license-MIT-65d6be)](LICENSE)
+[![Native checks](https://github.com/brant92good/port-forward-tui/actions/workflows/native.yml/badge.svg)](https://github.com/brant92good/port-forward-tui/actions/workflows/native.yml)
+[![Platforms](https://img.shields.io/badge/Windows_%7C_Linux_%7C_macOS_beta-65d6be)](docs/verification.md)
+[![MIT](https://img.shields.io/badge/license-MIT-65d6be)](LICENSE)
 
-[Install](#set-up) · [First connection](#open-a-remote-app) · [Agent commands](#use-it-with-a-coding-agent-or-script) · [Report a problem](https://github.com/brant92good/port-forward-tui/issues)
+[Install](#install) · [First connection](#first-connection) · [Agent commands](#commands-for-your-agent) · [How it works](docs/reference.md)
 
-![Saved connections grouped by server in Port Forward TUI](docs/screenshots/connections.svg)
+> Native release candidate: the Rust implementation is under verification on
+> this branch. The installation commands below target v0.7.0 and become usable
+> when its release assets are published. Stable v0.6.0 still uses the earlier
+> Python implementation. See [current evidence](docs/verification.md).
 
-*The actual app with example servers and simulated connection states.*
+![Ports showing saved connections across servers](docs/screenshots/connections.svg)
 
-## Set up
+*Native widgets rendered with example machines and connection states.*
 
-**Want the apps and Python installed for you?**
-[Terminal Workspace](https://github.com/brant92good/terminal-workspace#set-up-on-windows)
-has a one-command Windows installer. It includes this app, a remote shell tab,
-an SSH picker and return shortcuts.
+## Install
 
-**Only want Port Forward TUI?** Use Windows 10/11 with **Windows Terminal,
-Git, Windows Python 3.12+ and OpenSSH Client**. Run in PowerShell:
+Windows, in PowerShell:
 
 ```powershell
-git clone https://github.com/brant92good/port-forward-tui.git
-cd port-forward-tui
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\open.ps1
+irm https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.0/install.ps1 | iex
+ports
 ```
 
-The standalone installer creates an app Python environment and adds an entry
-to the Terminal dropdown. Keep the checkout in place; the entry points to it.
-It doesn't ask for a server. On first launch, **A** adds a machine or **I**
-imports SSH names. Select one and press Enter.
+Linux or macOS **beta**:
 
-Background forwards need an SSH login that works without a password prompt,
-usually through a key or key agent. [First-time setup and troubleshooting](docs/getting-started.md)
-covers that, missing tools, Conda and custom Python paths. This app currently
-supports Windows.
+```sh
+curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.0/install.sh | sh
+```
 
-## Open a remote app
+Open a new terminal and run `ports`.
 
-1. Start the app on your remote machine. This example uses port **8000**.
-2. Type **`8000`** in the quick-entry field and press **Enter**.
-3. Select the connection. When it shows **ON**, press **B** to open its local HTTP address.
+The installer downloads a compiled app and checks its SHA-256 digest. Normal
+use needs **OpenSSH**, with no Python, Rust toolchain, or Git installation.
+Choose a machine after installation: **A** adds an SSH name or `user@address`;
+**I** previews names from your SSH config for import.
 
-Need a different port on your laptop? Type **`18000:8000 My web app`**, then
-use `http://localhost:18000`. Both sides use the same port when you enter just one.
+Want a remote tab, Ports, local sessions, and return shortcuts together?
+[Terminal Workspace](https://github.com/brant92good/terminal-workspace) adds that
+Windows integration. Ports also runs independently in your current terminal.
 
-Prefer separate fields? Press **Esc, then A** to open the add form:
+## First connection
 
-![The add form: remote port 8000, optional local port, and a saved name](docs/screenshots/add-connection.svg)
+If you normally connect with `ssh workbox`, add or import `workbox`. Your SSH
+login must work without a password prompt before Ports can run it in the
+background. [Setup help](docs/getting-started.md) covers first-time login.
 
-*This is the A form. N focuses quick entry; E edits a saved connection.
-A blank local port uses the remote port. Tab moves between fields.*
+1. Run your app on the server, for example on port **8000**.
+2. In Ports, type **`8000`** and press **Enter**.
+3. When the row is **ON**, press **B** to open its local HTTP address.
+
+Need local port 18000 instead? Enter **`18000:8000 API`**. A single number uses
+the same port on both computers. **A** opens separate fields; **N** focuses
+quick entry; **E** edits the selected favorite.
+
+![A opens the full add-favorite form](docs/screenshots/add-connection.svg)
+
+*The A form. [N quick entry](docs/screenshots/quick-forward.svg) accepts a port
+directly in the main view.*
 
 ## Who is this for?
 
-- You open the same remote web apps or notebooks often and want to save their ports.
-- You use several servers and want to see which connections are running together.
-- You want to close a terminal window without losing access to a remote app.
-- You build with a coding agent and want it to manage forwards through commands you can inspect.
+- You switch between remote projects and keep reconstructing the same `ssh -L` commands.
+- Your dev servers and notebooks live on several machines.
+- You want forwards to survive closing a tab or the entire terminal.
+- You want a coding agent to manage the same saved connections through inspectable commands.
 
-## Saved connections, a few keys
+## A few keys cover the daily work
 
 | Key | Action |
 | --- | --- |
-| Up / Down, then Enter or Space | Start or stop a saved connection |
-| N / A | Quick entry / add form |
-| E / D | Edit / delete the selected favorite |
-| B / R | Open its HTTP address / restart it |
-| H | Add, import or choose machines |
-| Q | Close the view; background connections continue |
-| S | Stop every listed server's connections and pending retries |
+| ↑ / ↓, then Enter or Space | Select a favorite and start/stop it |
+| N / A | Quick entry / add and connect using a form |
+| E / D | Edit / delete a favorite |
+| B / R | Open its HTTP address / reconnect now |
+| H | Add, import, or select machines |
+| Q | Close this view; background forwards continue |
+| S | Stop forwards and pending retries on all listed servers |
+| F2 | Windows return shortcut: this window or all windows |
 | ? | Full keyboard guide |
 
-Press **Esc** first if you're typing in quick entry. **Add to** shows which
-server receives a new connection. All servers' favorites stay in the list,
-and more than one can be connected at a time. Two remote apps using port 8000
-need different local ports, such as 8000 and 18000.
-[Machine management and SSH import](docs/machines.md).
+The selected row determines which machine receives a new forward. Each view
+keeps its own selection, while favorites and connection state stay shared.
+Conflicting edits are rejected so one view cannot silently overwrite another.
 
-## When a laptop loses its connection
+## When your connection drops
 
-Started forwards retry recoverable network interruptions in the background,
-even with the view closed. **Enter** stops retries; **R** retries now.
-Authentication, host-key and local-port errors need attention.
+Started forwards retry recoverable failures after **2, 4, 8, 16, then at most
+30 seconds**. Stop a row to cancel its retries. Authentication, host-key, and
+occupied-port errors need attention; saved OFF favorites stay OFF.
 
-Closing a tab or the entire Terminal app leaves forwards running. Reboot or
-sign-out ends them; saved favorites remain. **ON** means a local listener is
-ready—the remote app still needs to be running.
-[Recovery timing, limitations and updating a running manager](docs/recovery.md).
+Closing the terminal leaves the background controller running. Rebooting or
+signing out ends it. **ON** confirms that SSH owns the local listener; the remote
+app still needs to be running. [Recovery and updates](docs/recovery.md).
 
-### Updating
+## Commands for your agent
 
-After updating the app, reopen its views and explicitly restart each running
-manager to load the new code. [Update steps](docs/recovery.md#updating) explain
-the brief interruption and how requested connections are restored.
-
-## Use it with a coding agent or script
-
-```powershell
-.\doctor.ps1 --json
-.\ports.ps1 machines list --json
-.\ports.ps1 save --machine MACHINE_ID --remote 8000 --name 'My web app' --json
-.\ports.ps1 start FAVORITE_ID --machine MACHINE_ID --json
+```sh
+ports doctor --json
+ports machines list --json
+ports save --machine MACHINE_ID --remote 8000 --name API --json
+ports start FAVORITE_ID --machine MACHINE_ID --json
 ```
 
-Get the machine ID from `machines list` and the favorite ID from `save`.
-Saving records a favorite; starting opens its connection. The result reports
-whether it is ON, CONNECTING, RETRYING or needs attention.
-[Command guide](docs/automation.md) covers adding machines, stopping, deleting
-and JSON output. [AGENTS.md](AGENTS.md) maps the code and checks.
+Use IDs returned by the previous command. `save` records a favorite; `start`
+opens it. JSON results distinguish ON, CONNECTING, RETRYING, ERROR, and unobserved
+status. [CLI contract](docs/automation.md) · [Agent instructions](AGENTS.md).
 
-## What has been checked
+## Evidence, scope, and contributing
 
-Live checks sent traffic through two SSH forwards together, interrupted one,
-and observed it recover while the other stayed usable. A separate desktop
-check closed the entire test Terminal window and confirmed traffic still passed.
-CI checks keyboard flows, controller commands and concurrent edits on Windows
-with Python 3.12–3.14. [Test details and reproduction](docs/verification.md).
+Native tests exercise actual local controller requests, competing edits,
+owned SSH-shaped processes and their descendants, recovery, and keyboard flows
+in an OS pseudo-terminal. Published results separate those checks from real
+OpenSSH and desktop testing. [Verification details](docs/verification.md).
 
-The recovery test used two profiles of one physical server. Actual laptop
-sleep/resume and Wi-Fi roaming still need testing.
+Ports handles local TCP forwarding. It does not transfer files, provide remote
+or dynamic SOCKS forwarding, or start your remote app. For one temporary forward,
+plain `ssh -L` is often enough.
 
-## Need a hand?
-
-Run **`.\doctor.ps1`** for setup checks. If a row is ON but the page won't load,
-check that the remote app is running on the expected port. For SSH errors,
-try your usual SSH command in PowerShell.
-[Troubleshooting](docs/getting-started.md#something-did-not-work).
-
-For one temporary connection, `ssh -L` may be all you need. This app adds saved
-names, keyboard controls and shared background connections. It handles local
-TCP forwards; reverse forwarding and UDP are outside its scope.
-
-[Technical reference](docs/reference.md) · [Screenshots from the app](scripts/capture_screenshots.py) · [MIT license](LICENSE)
+[Report a problem](https://github.com/brant92good/port-forward-tui/issues) ·
+[Build and architecture](docs/reference.md) · [MIT license](LICENSE)

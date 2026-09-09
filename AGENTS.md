@@ -1,68 +1,51 @@
-# Working on Port Forward TUI
+# Working on Ports
 
-This Windows app lets someone open a remote web app through an address on their
-own computer. A favorite stores a name and two port numbers. SSH carries the
-connection; a background process owns it so closing the screen does not stop it.
+Ports saves and controls local SSH forwards across multiple machines. The
+production entry point is the compiled `ports` command on Windows, Linux and
+macOS (beta). Read README.md and docs/verification.md before changing claims.
 
-## First actions
+## Inspect before changing
 
-- Read README.md for setup and command examples. Run `./doctor.ps1 --json` for
-  local prerequisites. It does not install, write settings, or contact SSH.
-- Detailed first-use help is in docs/getting-started.md; the CLI contract is
-  in docs/automation.md. docs/verification.md distinguishes test results from
-  untested environments. Keep public claims within that evidence.
-- Use `./ports.ps1 list --json` to inspect favorites. Use the documented save,
-  start, stop and delete commands rather than screen automation or editing live
-  JSON. Read IDs from results. `UNKNOWN` means no live status was observed;
-  `ON` confirms a local listener, not a working remote web service.
-- Installation: `./install.ps1 -NonInteractive`; no host is required.
-  Use `ports.ps1 machines add EXISTING_ALIAS --json` or explicit SSH import later.
-  Get SSH names from the user or existing configuration. Do not invent them.
-  Honor the user's existing authorization for installation, tests and publishing.
-- JSON has `schema_version: 1` and `ok`. Exit codes: 0 success, 1 failed check or
-  operation, 2 invalid arguments. Startup without usable Python is reported by
-  PowerShell before the JSON command can run.
+Use `ports doctor --json`, `ports machines list --json` and `ports list --json`.
+These are read-only: no SSH login, settings writes or daemon startup. Use exact
+machine/favorite IDs from results. UNKNOWN means state was not observed; ON
+means an owned local SSH listener, not a healthy remote web app.
 
-## Code map and invariants
+Installation downloads compiled binaries and does not require a host, Python,
+Cargo or Git. OpenSSH is the transport. Follow the README installer commands;
+add/import machines afterward. The old Python source and PowerShell entry points
+remain for migration compatibility; use the compiled command for native work.
+See docs/automation.md for schema version 1 and exit codes 0/1/2.
 
-- `port_forward_tui/ui.py` / `port_forward_tui/app.tcss`: screen, keyboard actions, add/edit forms, help.
-- `port_forward_tui/cli.py` / `port_forward_tui/diagnostics.py`: headless commands and local checks.
-- `port_forward_tui/forwarding.py`: file schema, SSH arguments, owned Windows process jobs.
-- `port_forward_tui/machines.py`, `machine_ui.py`: independent machine catalog, keyboard picker and opt-in SSH import.
-- `port_forward_tui/connections.py`, `all_machines_ui.py`: combined server list, asynchronous local status reads and routing to separate controllers. UI row IDs are namespaced; persisted/CLI favorite IDs are unchanged.
-- `port_forward_tui/window_context.py`: resolve the invoking window's machine before choosing a return target.
-- `port_forward_tui/background.py`: authenticated local control server and serialized writes.
-- `port_forward_tui/launch.py`, `port_forward_tui/views.py`, `native/FocusHelper.cs`: lightweight return shortcut.
-- `install.ps1`, `scripts/python_bootstrap.ps1`: private environment and Terminal entry.
+## Invariants
 
-Keep the existing-view return path free of Textual imports. Preserve concurrent
-favorite edits through the server. Never infer an SSH connection from a UI row
-alone or claim persistence across reboot. Don't kill unrelated processes, use
-real favorites in tests, or publish endpoint.json, SSH keys, hosts or private
-paths. Use isolated `--data-dir` folders and explicit cleanup.
+- Keep saved schemas, IDs, per-device paths and protocol-1 compatibility.
+- Preserve concurrent edits through the controller; stale edits/deletes must fail.
+- A/quick entry save and connect. E saves; active edits restart the changed mapping.
+- OFF never starts itself. Stop, delete and stop-all cancel pending retries.
+- Multiple background views share state; closing views does not stop forwards.
+- Foreground mode owns a single machine and ends its forwards when it closes.
+- S stops all listed machines; CLI stop-all requires a machine when ambiguous.
+- Keep strict host-key checking, owned process cleanup, and loopback-only binds.
+- Read SSH aliases statically; do not execute config commands during discovery.
+- Never infer identity from an adjacent tab, duplicate title or a row number.
+- Never use personal favorites/keys/hosts in tests, kill unrelated processes,
+  steal desktop focus, or publish endpoint.json and private connection metadata.
 
-Started connections retry recoverable failures with bounded delays. RETRYING
-still means requested ON: stop, stop-all, delete and editing must cancel or
-replace pending attempts. OFF favorites never start automatically. Keep strict
-host-key checking and do not loop on authentication, host-key or local-port
-conflicts. `restart-manager --machine ID` is an explicit controller upgrade that
-briefly interrupts then restores requested connections; old views need reopening.
+## Source and checks
 
-## Verification and shipping
+See docs/reference.md for the module map. Application code is in src/, tests in
+tests/, Windows helpers in native/, setup/release tools in scripts/.
 
-Run `.\.venv\Scripts\python.exe -E -s -m unittest discover -v`. Tests cover real
-local control-server requests and keyboard flows without needing a remote host.
-`scripts/check_live.py --host ALIAS` is an opt-in real SSH check. Desktop focus tests
-live in the companion terminal-workspace repository and move real windows.
-Screenshots: `scripts/capture_screenshots.py` renders the actual UI with clearly
-labeled simulated data. Review images before publishing.
+Run `cargo test --locked --all-targets` and
+`cargo clippy --locked --all-targets -- -D warnings`. ConPTY tests own their
+pseudo-terminal and do not open desktop windows. Real SSH checks use disposable
+fixtures and explicit cleanup. Keep behavioral evidence distinct from compilation,
+simulated states, old Python tests and actual released-download verification.
 
-This public repository contains no personal setup. When it is included as a
-submodule (a repository pinned inside another), publish this commit first, then
-update the parent's recorded commit. Keep examples generic and explain new
-terms before asking a beginner to make a choice.
-
-Root app.py and ports.py are stable command entry points. Application code
-lives in port_forward_tui/, automated checks in tests/, native focus code in
-native/, and setup/live-check utilities in scripts/. Keep new files with their
-responsible component rather than adding implementation files to the root.
+Build helpers only into artifact directories. The checkout may also be used by
+an existing installation; do not overwrite live launchers during development.
+Publish a leaf's qualified release before advancing integration/private pins.
+Use the user's authorized publishing mechanism; honor any local instructions
+about running git/gh outside a sandbox. Do not add personal values to this public
+repository.

@@ -1,4 +1,4 @@
-"""Capture the real Textual UI with simulated example data, without SSH."""
+"""Historical Python UI capture. Native screenshots: cargo run --example capture."""
 import asyncio
 import base64
 from html import escape

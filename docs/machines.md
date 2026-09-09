@@ -1,104 +1,76 @@
 # Machines and SSH import
 
-Installation prepares the app. You can add machines later, and use the port app
-with any SSH workflow; Herdr is not required.
+Install first; choose machines afterward. Ports uses OpenSSH and works
+independently of Herdr or any particular terminal app.
 
-## Add or import your first machine
+## Add or import
 
-Open the app after `.\install.ps1`. The machine picker appears if you have no
-saved machines. Press **A** to add one manually:
+Run `ports`. **A** adds an SSH alias such as `workbox` or a destination such as
+`alex@server.example.com`. Give it an optional friendly name. Leave the SSH
+login port blank to use your SSH configuration (normally 22); this is separate
+from the app port you want to forward. An optional config path is passed to
+OpenSSH with `-F`.
 
-- Enter an SSH name such as `workbox`, or a login such as `alex@server.example.com`.
-- Give it an optional friendly name.
-- Leave the SSH login port blank to use your SSH configuration (normally 22).
-  This field is separate from your web app's port, such as 8000.
-- Press Enter to save and open its port manager. Saving a machine does not log in.
+**I** previews aliases from `~/.ssh/config` (the home directory on each OS), or
+another file you select. **Space** selects names, **A** selects all, and
+**Enter** imports selected names—or just the highlighted name when none are
+checked. Adding or importing does not connect to the server.
 
-Alternatively press **I** to import from SSH config. The default file is
-`%USERPROFILE%\.ssh\config`; you can select a different file. The screen previews
-literal `Host` names. Use Up/Down and Space to select names, then Ctrl+S to import.
-Choose an imported machine and press Enter to open it.
+Import reads literal Host names and static Include files with depth/file limits.
+Wildcard and negated patterns are excluded. Dynamic paths with percent tokens
+are skipped; add those aliases manually. Imported names may be conditional;
+OpenSSH evaluates their settings when you connect. The importer does not execute
+Match commands or rewrite your configuration.
 
-![The machine picker, with example saved machines](screenshots/machines.svg)
+Your existing OpenSSH configuration supplies keys, jump hosts and ProxyCommand
+settings. Keep an imported nondefault configuration at its recorded path.
 
-*Example machines.*
+## Several servers in one view
 
-Import reads names from the selected file and its Include files. Wildcards and
-negated patterns are not selectable machines.
-Conditional includes can contribute names; OpenSSH evaluates their settings
-when you connect. Dynamic Include paths using percent tokens are skipped; add
-such aliases manually. [OpenSSH documents Host, Include and Match behavior](https://man.openbsd.org/ssh_config).
+The main list includes every saved server, with its name in the SERVER column.
+Move to a row to choose where quick entry and **A** add a forward. An empty
+machine still has a selectable row. The header and add form show the selected
+server.
 
-An imported alias continues using your SSH configuration, including keys and
-jump hosts. For a nondefault config file, the app records its path and passes
-it to SSH with `-F`. Keep that file in place.
+**H** opens the machine picker. If you are typing in quick entry, press **Esc**
+first. Existing forwards continue while you choose or add another machine.
+Each open view keeps its own selection; favorites and live state are shared.
+**S** asks before stopping all listed servers, including pending retries.
+`--foreground` instead runs one machine and stops its forwards when that view
+closes; machine switching is not offered in that mode.
 
-## Manage several servers together
+Two servers can both have remote port 8000. Use local 8000 for one and local
+18000 for the other. The UI rejects using another enabled connection's local
+port, even while that connection is retrying. It does not stop another server's
+forward to take the port.
 
-The default screen lists favorites from **all saved servers**, grouped in the
-SERVER column. Start connections on several servers at once with Enter. Moving
-Up/Down selects both a connection and its server; quick entry and the A form
-add to that server, named in **Add to** above the list and in the form itself.
-An empty server still has a row so you can select it and add a favorite.
+Run `ports --machines` to always show the picker, or
+`ports --machine MACHINE_ID` to select that server initially.
+`ports --host workbox` adds or opens that destination.
 
-Press **Esc, H** to add/import machines or select a different initial server.
-Canceling the picker returns to the list. Each view keeps its own selection;
-existing background forwards keep running. S stops all servers in the list,
-including pending reconnect attempts. Foreground mode remains a single-machine
-view and asks before stopping its connections when you switch machines.
+## Windows Terminal integration
 
-Each machine has separate favorites, connection state and return-shortcut scope
-(F2). Two machines can save remote port 8000, but they cannot both listen on the
-same local port at once. Use local 18000 for the second connection. A conflict
-is reported; the app does not stop another machine's forward to take its port.
+[Terminal Workspace](https://github.com/brant92good/terminal-workspace) pairs
+remote tabs with Ports and adds return shortcuts. A Ports view records the
+machine selected in its list. Return shortcuts use the invoking window's known
+machine context, then choose that machine's most recently focused matching tab.
+**F2** allows searching across windows or restricts it to the current window.
+Without a known context, multiple saved machines prompt a picker.
 
-With Terminal Workspace, a new workspace window pairs a remote session and
-Ports initially selects your chosen machine in the combined list. Selecting a
-different server's row changes that tab's remote-shortcut context immediately.
-Shortcuts use the last-focused machine view in
-the invoking window, then find that machine's most recently focused target tab.
-F2 limits that search to this window or allows other windows. In a window with
-no known machine context and multiple saved machines, a picker appears.
-Opening another workspace keeps existing workspaces and forwards running.
+These shortcuts belong to the Windows integration. The core Ports app runs in
+other terminals too.
 
-Run `.\open.ps1 --machines` to always show the picker, or
-`.\open.ps1 --machine MACHINE_ID` to select that server initially in the list.
-`--host workbox` remains available: it adds or opens that destination, rather
-than changing the destination of existing favorites.
+## Existing data and updates
 
-## Existing installations
+The original `forwards.json` remains a machine. Extra machines live in
+`machines/` under the same local data directory. Favorite IDs and saved ports
+are retained. No repository or account is required.
 
-Your original `forwards.json`, favorite IDs and running background process stay
-in place. The old destination appears as a saved machine automatically. New
-machines live below `machines/` inside the same private app-data folder.
-No public or private repository is needed to store local machines.
+Destinations are immutable: add a new machine to change its SSH alias, login
+port or config path. Do not redirect a live controller by editing its data file.
 
-Open fresh app views after upgrading to load machine selection and window
-tracking. Already running views keep their loaded code. Closing a background
-view does not stop its forwards. Machine destinations are immutable: add a new
-machine when its SSH name, login port or config path changes. Do not edit a live
-favorites file to redirect its connections.
+Running views and controllers retain their loaded code. Close old views after
+an update, then use `ports restart-manager --machine MACHINE_ID --json` to
+replace that server's controller while restoring its enabled requests.
+[Update behavior](recovery.md) · [CLI commands](automation.md).
 
-A running controller keeps its loaded code too. Use
-`ports.ps1 restart-manager --machine MACHINE_ID` after updating to enable
-automatic reconnect: it briefly stops that server's forwards, loads the new
-controller, and restores only its ON/connecting/retrying requests. Saved OFF
-favorites stay OFF. See [Updating](../README.md#updating).
-
-## Commands for an agent
-
-```powershell
-.\ports.ps1 machines list --json
-.\ports.ps1 machines discover --json   # Read names without saving anything
-.\ports.ps1 machines import --select workbox --json
-.\ports.ps1 machines add alex@server.example.com --name Lab --ssh-port 2222 --json
-# Use the machine id returned above:
-.\ports.ps1 save --machine MACHINE_ID --remote 8000 --json
-.\ports.ps1 list --machine MACHINE_ID --json
-```
-
-With multiple saved machines, commands that change connections require
-`--machine`; they never guess from another window's most recent use. `list`
-without a machine includes all machines and labels their connections. Machine
-discovery, import and addition never open an SSH connection. See the
-[command guide](automation.md) for start, stop, deletion and JSON details.
