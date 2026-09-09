@@ -238,3 +238,35 @@ fn string_ports_roundtrip_without_creating_or_replacing_favorites() {
         assert!(Store::load(temp.path()).is_err());
     }
 }
+
+#[test]
+fn controller_waits_for_a_connected_client_to_send_its_request() {
+    use std::io::{BufRead, BufReader};
+    let temp = tempfile::tempdir().unwrap();
+    let machine = Catalog::new(temp.path())
+        .unwrap()
+        .add("workbox", "Delayed client", None, None)
+        .unwrap();
+    let _controller = Controller::start(&machine.directory);
+    let endpoint: background::Endpoint =
+        serde_json::from_slice(&fs::read(machine.directory.join("endpoint.json")).unwrap())
+            .unwrap();
+    let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, endpoint.port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    // A client may be descheduled after connect, or send a request in pieces.
+    // Windows accepted sockets inherit the listener's nonblocking mode.
+    thread::sleep(Duration::from_millis(100));
+    let request = json!({"protocol": 1, "token": endpoint.token, "command": "status"});
+    let bytes = serde_json::to_vec(&request).unwrap();
+    stream.write_all(&bytes[..8]).unwrap();
+    thread::sleep(Duration::from_millis(100));
+    stream.write_all(&bytes[8..]).unwrap();
+    stream.write_all(b"\n").unwrap();
+    let mut response = String::new();
+    BufReader::new(stream).read_line(&mut response).unwrap();
+    let response: Value = serde_json::from_str(&response).unwrap();
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(response["pid"], endpoint.pid);
+}

@@ -369,8 +369,6 @@ pub fn serve(directory: &Path) -> Result<()> {
                 if clients.load(Ordering::Relaxed) >= 16 {
                     continue;
                 }
-                stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-                stream.set_write_timeout(Some(Duration::from_secs(2)))?;
                 clients.fetch_add(1, Ordering::Relaxed);
                 let clients = Arc::clone(&clients);
                 let supervisor = Arc::clone(&supervisor);
@@ -383,6 +381,12 @@ pub fn serve(directory: &Path) -> Result<()> {
                     }
                     let _count = Count(clients);
                     let result = (|| -> Result<Value> {
+                        // Winsock inherits the listener's nonblocking mode.
+                        // Worker reads must wait for delayed/fragmented requests
+                        // within read_line's deadline. Socket setup errors belong
+                        // to this client, not to the entire tunnel controller.
+                        stream.set_nonblocking(false)?;
+                        stream.set_write_timeout(Some(Duration::from_secs(2)))?;
                         let request: Value = serde_json::from_slice(&read_line(
                             &mut stream,
                             MAX_REQUEST,

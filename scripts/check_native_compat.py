@@ -90,6 +90,12 @@ def main():
                 saved = json.loads((directory/'forwards.json').read_text(encoding='utf-8'))
                 assert saved['keep_alive'] is True and saved['forwards'][0]['id'] == rule.id
                 print(f'PASS {implementation} controller: native and legacy clients, CAS, IDs, OFF state, shared lock')
+            except BaseException:
+                # Fixture-only diagnostics: never dump endpoint authentication.
+                print(f'FAIL {implementation}: launcher exit={controller.poll()}', file=sys.stderr)
+                print((directory/'controller.log').read_text(encoding='utf-8', errors='replace')[-8192:],
+                      file=sys.stderr)
+                raise
             finally:
                 try:
                     exchange(directory, 'shutdown', timeout=2)

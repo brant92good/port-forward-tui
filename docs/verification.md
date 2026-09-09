@@ -5,11 +5,15 @@ describe their actual fixtures, not every developer's computer.
 
 ## Verified locally on Windows
 
-The working native candidate passes **18 tests** and Clippy with warnings denied.
+The working native candidate passes **20 tests** and Clippy with warnings denied.
 Independent review passed the controller and keyboard behavior changes.
 
 - Actual loopback controller requests exercise competing edits/deletes,
   authentication, slow peers and stop-all with malformed favorites.
+- A delayed, fragmented request reproduces Windows error 10053 before the fix
+  and succeeds afterward. Accepted Winsock sockets inherited the listener's
+  nonblocking mode; worker sockets now explicitly use blocking reads with the
+  existing two-second message deadline. No failed mutation is silently retried.
 - An SSH-shaped fixture opens real TCP listeners and spawns a child. A dropped
   parent triggers cleanup/retry while a second machine stays ON. Recovery makes
   new owned processes; explicit stop ends their descendants.
@@ -39,9 +43,23 @@ passed on all four Unix targets in
 That run subsequently exposed a keyboard fixture race: S was sent before the
 preceding mutation response. The fixture now waits for the updated main-view row.
 
-Unix foreground HUP/TERM cleanup and actual Linux OpenSSH forwarding/recovery
-checks are being qualified next. Normal Q cleanup and a mock transport are not
-sufficient evidence for terminal-close or real SSH behavior.
+All four Unix jobs passed in
+[run 34382122697](https://github.com/brant92good/port-forward-tui/actions/runs/34382122697).
+On Linux x64 and ARM64, separate real pseudo-terminal hangup and SIGTERM tests
+verify that foreground mode releases its owned SSH process group. The Unix
+input backend observes these signals even after the terminal stops producing
+input. Windows retains its own console input backend.
+
+Both Linux targets also pass `scripts/check_ssh_forwarding.py`: two detached
+native controllers carry real HTTP through system OpenSSH. Dropping one SSH
+connection triggers retries while the other keeps serving traffic. Restoring
+the network gate reconnects without replacing either controller. Stop/delete
+cancel retries, saved OFF rows remain OFF, and closing the launching command
+does not own the controllers' lifetime. The fixture uses disposable keys,
+loopback servers and explicit cleanup, not personal hosts.
+
+That matrix exposed the Windows socket inheritance defect described above;
+its fix and new regression require a fresh full matrix before release.
 
 ## Installation evidence
 
@@ -53,7 +71,7 @@ separate release gate on Windows x64, Linux x64/ARM64 and macOS ARM64/Intel.
 
 ## Not established by these checks
 
-- Real released-binary OpenSSH transport recovery: pending its separate fixture.
+- Real OpenSSH transport on Windows and macOS: not covered by the Linux fixture.
 - Final published HTTPS installation on all advertised targets: pending release.
 - Native Windows desktop focus/taskbar/Explorer behavior: integration-layer
   evidence must be checked separately, using owned test windows.
