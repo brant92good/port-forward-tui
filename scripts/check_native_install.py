@@ -18,7 +18,7 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--bundle', type=Path)
     mode.add_argument('--release', action='store_true')
-    parser.add_argument('--version', default='0.7.2')
+    parser.add_argument('--version', default='0.7.3')
     parser.add_argument('--ref')
     parser.add_argument('--with-path', action='store_true')
     options = parser.parse_args()

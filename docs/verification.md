@@ -1,6 +1,6 @@
 # Native verification
 
-Updated September 10, 2026. Native v0.7.2 is under patch-release qualification. Results below
+Updated September 10, 2026. Native v0.7.3 is under patch-release qualification. Results below
 describe their actual fixtures, not every developer's computer.
 
 ## Windows captured-command correction

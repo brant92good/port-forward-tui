@@ -15,7 +15,7 @@ terminal closed.
 
 [Install](#install) · [First connection](#first-connection) · [Agent commands](#commands-for-your-agent) · [How it works](docs/reference.md)
 
-> v0.7.2 candidate: fixes a Windows script-capture hang on first save and restart.
+> v0.7.3 candidate: fixes a Windows script-capture hang on first save and restart.
 > The commands below target the patch once its assets pass release qualification.
 > [Current evidence and earlier release checks](docs/verification.md).
 
@@ -28,14 +28,14 @@ terminal closed.
 Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.2/install.ps1 | iex
+irm https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.3/install.ps1 | iex
 ports
 ```
 
 Linux or macOS **beta**:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.2/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.3/install.sh | sh
 ```
 
 Open a new terminal and run `ports`.
