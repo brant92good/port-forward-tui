@@ -101,11 +101,12 @@ fn main() {
     let code = match run(&options) {
         Ok(code) => code,
         Err(error) => {
+            let usage = error.is::<cli::UsageError>();
             cli::print(
-                &json!({"schema_version":1,"ok":false,"error":{"code":"operation_failed","message":format!("{error:#}")}}),
+                &json!({"schema_version":1,"ok":false,"error":{"code":if usage{"invalid_arguments"}else{"operation_failed"},"message":format!("{error:#}")}}),
                 as_json,
             );
-            1
+            if usage { 2 } else { 1 }
         }
     };
     std::process::exit(code);

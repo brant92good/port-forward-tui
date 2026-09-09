@@ -1,0 +1,96 @@
+name: Native Rust checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  native:
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            rustflags: '-C target-feature=+crt-static'
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            rustflags: ''
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            rustflags: ''
+          - os: macos-14
+            target: aarch64-apple-darwin
+            rustflags: ''
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            rustflags: ''
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Build toolchain
+        run: rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt --target ${{ matrix.target }}
+      - name: Linux static linker and SSH test tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools openssh-server && sudo mkdir -p /run/sshd
+      - run: cargo +1.94.0 fmt --check
+      - run: cargo +1.94.0 test --locked --all-targets --target ${{ matrix.target }}
+      - run: cargo +1.94.0 clippy --locked --all-targets --target ${{ matrix.target }} -- -D warnings
+      - run: cargo +1.94.0 build --release --locked --target ${{ matrix.target }}
+      - name: Package Windows binary and precompiled helpers
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/package_native.ps1
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        run: python scripts/package_native.py --target '${{ matrix.target }}'
+      - name: Install/update compiled bundle with saved data and polluted environment
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then extension=zip; else extension=tar.gz; fi
+          python scripts/check_native_install.py --bundle "dist/ports-${{ matrix.target }}.$extension" --with-path
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+  prerelease:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: native
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Publish reviewed tag as prerelease without replacing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat dist/*.sha256 > dist/SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --prerelease --title "Ports $GITHUB_REF_NAME" --notes 'Compiled Rust apps for Windows, Linux and macOS. macOS remains beta. See README and verification notes for supported behavior and remaining desktop qualification.'
+  released-install:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: prerelease
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04, ubuntu-24.04-arm, macos-14, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Real advertised HTTPS installer and update
+        shell: bash
+        run: python scripts/check_native_install.py --release --version "${GITHUB_REF_NAME#v}"

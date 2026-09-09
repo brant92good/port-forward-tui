@@ -115,15 +115,25 @@ fn wait_seconds(text: &str) -> std::result::Result<f64, String> {
         Err("--wait must be between 0 and 30 seconds.".into())
     }
 }
+#[derive(Debug)]
+pub struct UsageError(pub String);
+impl std::fmt::Display for UsageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl std::error::Error for UsageError {}
 pub fn selected_machine(catalog: &Catalog, selector: Option<&str>) -> Result<Option<Machine>> {
     if let Some(selector) = selector {
         return catalog.get(selector).map(Some);
     }
     let machines = catalog.list()?;
-    ensure!(
-        machines.len() <= 1,
-        "Several machines are saved. Add --machine ID; run machines list to choose one."
-    );
+    if machines.len() > 1 {
+        return Err(UsageError(
+            "Several machines are saved. Add --machine ID; run machines list to choose one.".into(),
+        )
+        .into());
+    }
     Ok(machines.into_iter().next())
 }
 pub fn listing(store: &Store) -> Result<Value> {
@@ -277,7 +287,16 @@ pub fn execute(options: &Options) -> Result<Value> {
                     json!({}),
                     Duration::from_secs(5),
                 )?;
-                json!({"host":snapshot["host"],"background":"connected","forwards":snapshot["forwards"]})
+                let mut rules = snapshot["forwards"]
+                    .as_array()
+                    .context("Invalid controller favorites")?
+                    .clone();
+                for rule in &mut rules {
+                    let id = rule["id"].as_str().unwrap_or("").to_owned();
+                    rule["state"] = snapshot["states"][&id].as_str().unwrap_or("OFF").into();
+                    rule["url"] = json!(format!("http://127.0.0.1:{}", rule["local_port"]));
+                }
+                json!({"host":snapshot["host"],"background":"connected","forwards":rules})
             } else {
                 let store = Store::load(&directory)?;
                 if matches!(action, Action::List) {
@@ -303,7 +322,8 @@ pub fn execute(options: &Options) -> Result<Value> {
                             local,
                             name,
                         } => {
-                            store::name(name, true)?;
+                            store::name(name, true)
+                                .map_err(|error| UsageError(error.to_string()))?;
                             let snapshot = background::ensure_daemon(&directory)?;
                             let rules: Vec<Forward> =
                                 serde_json::from_value(snapshot["forwards"].clone())?;

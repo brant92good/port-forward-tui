@@ -449,6 +449,12 @@ pub fn ensure_daemon(directory: &Path) -> Result<Value> {
     if let Ok(snapshot) = exchange(directory, "status", json!({}), Duration::from_secs(2)) {
         return Ok(snapshot);
     }
+    let store = Store::load(directory)?;
+    ensure!(
+        store.settings.keep_alive,
+        "This machine uses foreground mode. Open its view with --machine and --foreground."
+    );
+    store::host(&store.settings.host)?;
     let mut child = launch(directory)?;
     let deadline = Instant::now() + Duration::from_secs(8);
     while Instant::now() < deadline {
