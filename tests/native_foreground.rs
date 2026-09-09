@@ -72,6 +72,21 @@ struct Terminal {
     parser: vt100::Parser,
     pending: Vec<u8>,
 }
+fn process_diagnostic(pid: u32) -> String {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+    let wait = fs::read_to_string(format!("/proc/{pid}/wchan")).unwrap_or_default();
+    let descriptors = fs::read_dir(format!("/proc/{pid}/fd"))
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            fs::read_link(entry.path())
+                .ok()
+                .map(|path| format!("{}={}", entry.file_name().to_string_lossy(), path.display()))
+        })
+        .collect::<Vec<_>>();
+    format!("pid={pid} stat={stat:?} wchan={wait:?} fds={descriptors:?}")
+}
 impl Terminal {
     fn start(root: &Path, machine: &str, bin: &Path) -> Self {
         let pair = native_pty_system()
@@ -161,10 +176,19 @@ impl Terminal {
             state.c_cc[libc::VEOF] = 0;
             assert_eq!(libc::tcsetattr(fd, libc::TCSANOW, &state), 0);
         }
+        eprintln!(
+            "before HUP {}",
+            process_diagnostic(self.child.process_id().unwrap())
+        );
+        eprintln!(
+            "before HUP owner {}",
+            process_diagnostic(std::process::id())
+        );
         // Every master descriptor must close for a real terminal hangup.
         self.writer.take();
         self.reader.take();
         self.pair.take();
+        eprintln!("after HUP owner {}", process_diagnostic(std::process::id()));
     }
     fn wait_exit(&mut self) {
         let deadline = Instant::now() + Duration::from_secs(8);
@@ -172,7 +196,8 @@ impl Terminal {
             self.pump();
             assert!(
                 Instant::now() < deadline,
-                "Foreground app survived termination"
+                "Foreground app survived termination: {}",
+                process_diagnostic(self.child.process_id().unwrap())
             );
             thread::sleep(Duration::from_millis(20));
         }
@@ -187,8 +212,7 @@ impl Drop for Terminal {
     }
 }
 
-#[test]
-fn foreground_pty_close_and_sigterm_stop_owned_ssh_and_proxy() {
+fn check_foreground_cleanup(hangup: bool) {
     let temp = tempfile::tempdir().unwrap();
     let bin = temp.path().join("bin");
     fs::create_dir(&bin).unwrap();
@@ -204,7 +228,7 @@ fn foreground_pty_close_and_sigterm_stop_owned_ssh_and_proxy() {
         "{}",
         String::from_utf8_lossy(&build.stderr)
     );
-    for hangup in [true, false] {
+    {
         let root = temp.path().join(if hangup { "hangup" } else { "sigterm" });
         let fixture = root.join("fixture");
         fs::create_dir_all(&fixture).unwrap();
@@ -257,4 +281,14 @@ fn foreground_pty_close_and_sigterm_stop_owned_ssh_and_proxy() {
         assert!(process::owned_listeners(&[parent]).unwrap().is_empty());
         assert!(!machine.directory.join("endpoint.json").exists());
     }
+}
+
+#[test]
+fn foreground_pty_close_stops_owned_ssh_and_proxy() {
+    check_foreground_cleanup(true);
+}
+
+#[test]
+fn foreground_sigterm_stops_owned_ssh_and_proxy() {
+    check_foreground_cleanup(false);
 }

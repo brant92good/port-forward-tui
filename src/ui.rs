@@ -156,9 +156,15 @@ impl Worker {
     }
 }
 fn perform(catalog: &Catalog, operation: &Operation) -> Result<Value> {
-    if matches!(operation.command, "start" | "restart" | "upsert") {
-        let rows = load_entries(catalog, true)?;
-        check_port_conflict(operation, &rows)?;
+    let rows = if matches!(operation.command, "start" | "restart" | "upsert" | "quick") {
+        Some(load_entries(catalog, true)?)
+    } else {
+        None
+    };
+    let resolved = resolve_operation(operation, rows.as_deref().unwrap_or_default())?;
+    let operation = &resolved;
+    if let Some(rows) = &rows {
+        check_port_conflict(operation, rows)?;
     }
     if operation.command == "stop_listed" {
         let mut errors = Vec::new();
@@ -197,6 +203,22 @@ fn perform(catalog: &Catalog, operation: &Operation) -> Result<Value> {
             operation.args.clone(),
         )
     }
+}
+fn resolve_operation(operation: &Operation, rows: &[Entry]) -> Result<Operation> {
+    if operation.command != "quick" {
+        return Ok(operation.clone());
+    }
+    let entry = rows
+        .iter()
+        .find(|row| row.machine.directory == operation.directory)
+        .context("This machine is no longer available. Reopen the machine picker.")?;
+    quick_operation(
+        entry,
+        rows,
+        operation.args["text"]
+            .as_str()
+            .context("Missing quick entry")?,
+    )
 }
 // An enabled connection reserves its local port in this manager even while its
 // network is down. Re-read live status near dispatch, rather than trusting the
@@ -544,13 +566,17 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
             }
         } else if let Some(local) = &mut local {
             if let Some(operation) = pending.take() {
-                let result = if operation.command == "restart" {
-                    local
-                        .local("stop", operation.args.clone())
-                        .and_then(|_| local.local("start", operation.args))
-                } else {
-                    local.local(operation.command, operation.args)
-                };
+                let result = (|| -> Result<Value> {
+                    let current = entries(&machine, Some(&local.snapshot()), None)?;
+                    let operation = resolve_operation(&operation, &current)?;
+                    if operation.command == "restart" {
+                        local
+                            .local("stop", operation.args.clone())
+                            .and_then(|_| local.local("start", operation.args))
+                    } else {
+                        local.local(operation.command, operation.args)
+                    }
+                })();
                 match result {
                     Ok(_) => notice = "Updated".into(),
                     Err(error) => notice = format!("{error:#}"),
@@ -626,7 +652,15 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                 KeyCode::Enter if pending.is_none() && !changing => {
                     let result = (|| -> Result<Operation> {
                         let entry = entry.as_ref().context("Choose a machine first.")?;
-                        quick_operation(entry, &rows, &quick.value)
+                        // Validate immediately, but resolve an existing mapping
+                        // again on the worker. A fast next entry can precede the
+                        // screen's refresh after the last saved favorite.
+                        quick_operation(entry, &rows, &quick.value)?;
+                        Ok(Operation {
+                            directory: entry.machine.directory.clone(),
+                            command: "quick",
+                            args: json!({"text":quick.value}),
+                        })
                     })();
                     match result {
                         Ok(operation) => {

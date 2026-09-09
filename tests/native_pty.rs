@@ -19,6 +19,9 @@ struct Session {
 }
 impl Session {
     fn start(root: &Path, machine: &str) -> Self {
+        Self::with_mode(root, machine, false)
+    }
+    fn with_mode(root: &Path, machine: &str, foreground: bool) -> Self {
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 32,
@@ -29,6 +32,9 @@ impl Session {
             .unwrap();
         let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_ports"));
         command.args(["--data-dir", root.to_str().unwrap(), "--machine", machine]);
+        if foreground {
+            command.arg("--foreground");
+        }
         command.cwd(root);
         command.env("TERM", "xterm-256color");
         command.env_remove("WT_SESSION");
@@ -104,6 +110,51 @@ impl Session {
             assert!(Instant::now() < deadline, "View did not close");
         }
     }
+}
+
+#[test]
+fn foreground_quick_entry_resolves_saved_mapping_before_next_screen_poll() {
+    let temp = tempfile::tempdir().unwrap();
+    let catalog = Catalog::new(temp.path()).unwrap();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let machine = catalog
+        .add(
+            "127.0.0.1",
+            "Foreground server",
+            Some(listener.local_addr().unwrap().port()),
+            None,
+        )
+        .unwrap();
+    drop(listener);
+    let mut view = Session::with_mode(temp.path(), &machine.id, true);
+    view.expect("Saved connections");
+    view.send("n18333:8333 Original API\r");
+    view.wait_for(|| {
+        Store::load(&machine.directory)
+            .unwrap()
+            .settings
+            .forwards
+            .iter()
+            .any(|r| r.name == "Original API")
+    });
+    let saved = Store::load(&machine.directory)
+        .unwrap()
+        .settings
+        .forwards
+        .into_iter()
+        .find(|r| r.name == "Original API")
+        .unwrap();
+    view.send("n18333:8333 Renamed immediately\r");
+    view.wait_for(|| {
+        Store::load(&machine.directory)
+            .unwrap()
+            .settings
+            .forwards
+            .iter()
+            .any(|r| r.id == saved.id && r.name == "Renamed immediately")
+    });
+    view.close();
+    assert!(!machine.directory.join("endpoint.json").exists());
 }
 impl Drop for Session {
     fn drop(&mut self) {

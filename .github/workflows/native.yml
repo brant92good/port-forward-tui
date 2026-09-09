@@ -41,6 +41,12 @@ jobs:
       - run: cargo +1.94.0 test --locked --all-targets --target ${{ matrix.target }}
       - run: cargo +1.94.0 clippy --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - run: cargo +1.94.0 build --release --locked --target ${{ matrix.target }}
+      - name: Historical/native controller protocol and lock compatibility
+        if: runner.os == 'Windows'
+        run: python scripts/check_native_compat.py --binary target/${{ matrix.target }}/release/ports.exe
+      - name: Real OpenSSH forwarding, concurrent hosts, recovery and cancellation
+        if: runner.os == 'Linux'
+        run: python scripts/check_ssh_forwarding.py --binary 'target/${{ matrix.target }}/release/ports' --sudo-sshd
       - name: Package Windows binary and precompiled helpers
         if: runner.os == 'Windows'
         shell: powershell
