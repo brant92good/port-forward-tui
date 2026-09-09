@@ -532,12 +532,10 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     }
                 }
             }
-            if !changing {
-                if let Some(operation) = pending.take() {
-                    generation = generation.wrapping_add(1);
-                    worker.changes.send(operation)?;
-                    changing = true;
-                }
+            if !changing && let Some(operation) = pending.take() {
+                generation = generation.wrapping_add(1);
+                worker.changes.send(operation)?;
+                changing = true;
             }
             if !polling && !changing && !closing && Instant::now() >= next_poll {
                 worker.polls.send(generation)?;

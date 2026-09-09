@@ -95,6 +95,18 @@ fn actual_owned_listener_proxy_descendants_recovery_and_other_machine_isolation(
         || {
             first.poll(Instant::now());
             second.poll(Instant::now());
+            assert_ne!(
+                first.state(&one.id),
+                State::Error,
+                "First listener failed: {}",
+                first.details(&one.id, Instant::now())
+            );
+            assert_ne!(
+                second.state(&two.id),
+                State::Error,
+                "Second listener failed: {}",
+                second.details(&two.id, Instant::now())
+            );
             first.state(&one.id) == State::On
                 && second.state(&two.id) == State::On
                 && pid(&path_one, "child.pid").is_some()
@@ -129,6 +141,12 @@ fn actual_owned_listener_proxy_descendants_recovery_and_other_machine_isolation(
         "first connection recovers with a new proxy descendant",
         || {
             first.poll(Instant::now());
+            assert_ne!(
+                first.state(&one.id),
+                State::Error,
+                "Recovery failed: {}",
+                first.details(&one.id, Instant::now())
+            );
             first.state(&one.id) == State::On
                 && pid(&path_one, "child.pid").is_some_and(|id| id != first_child)
         },

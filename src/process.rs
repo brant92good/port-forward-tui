@@ -87,6 +87,11 @@ fn check_local_port(port: u16) -> Result<()> {
     )?;
     #[cfg(windows)]
     platform::exclusive(&socket)?;
+    // OpenSSH and std's Unix listener can rebind after accepted connections
+    // enter TIME_WAIT. Match that policy for the preflight; a live listener
+    // still rejects the bind. Windows keeps exclusive ownership above.
+    #[cfg(unix)]
+    socket.set_reuse_address(true)?;
     socket
         .bind(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into())
         .with_context(|| {
@@ -332,5 +337,44 @@ mod tests {
         assert!(check_local_port(port).is_err());
         drop(socket);
         assert!(check_local_port(port).is_ok());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unix_preflight_allows_recovery_after_traffic_but_rejects_live_listener() {
+        use std::{
+            io::Write,
+            net::{TcpListener, TcpStream},
+        };
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        assert!(check_local_port(address.port()).is_err());
+        let mut client = TcpStream::connect(address).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let (mut service, _) = listener.accept().unwrap();
+        service.write_all(b"served").unwrap();
+        // The server closes first, leaving its accepted connection in TIME_WAIT.
+        drop(service);
+        let mut received = Vec::new();
+        client.read_to_end(&mut received).unwrap();
+        assert_eq!(received, b"served");
+        drop(client);
+        drop(listener);
+        let without_reuse = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::STREAM,
+            Some(socket2::Protocol::TCP),
+        )
+        .unwrap();
+        assert_eq!(
+            without_reuse.bind(&address.into()).unwrap_err().kind(),
+            std::io::ErrorKind::AddrInUse
+        );
+        assert!(check_local_port(address.port()).is_ok());
+        let reopened = TcpListener::bind(address).unwrap();
+        assert!(check_local_port(address.port()).is_err());
+        drop(reopened);
     }
 }
