@@ -21,19 +21,17 @@ Choose an imported machine and press Enter to open it.
 
 ![The machine picker, with example saved machines](screenshots/machines.svg)
 
-*Actual app screen, rendered with example data and no SSH connections.*
+*Example machines.*
 
-Import reads names from the selected file and its Include files. It does not
-copy private keys, modify your SSH config, run `ssh -G`, execute `Match exec`,
-or contact a server. Wildcards and negated patterns are not selectable machines.
+Import reads names from the selected file and its Include files. Wildcards and
+negated patterns are not selectable machines.
 Conditional includes can contribute names; OpenSSH evaluates their settings
 when you connect. Dynamic Include paths using percent tokens are skipped; add
 such aliases manually. [OpenSSH documents Host, Include and Match behavior](https://man.openbsd.org/ssh_config).
 
 An imported alias continues using your SSH configuration, including keys and
 jump hosts. For a nondefault config file, the app records its path and passes
-it to SSH with `-F`. Keep that file in place. Import is not a copy of credentials
-or a portable backup of the referenced file.
+it to SSH with `-F`. Keep that file in place.
 
 ## Manage several servers together
 

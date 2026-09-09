@@ -65,4 +65,3 @@ def print_report(value, as_json=False):
         print(f"[{item['status'].upper()}] {item['message']}")
         if item['next_step']:
             print('  Next: ' + item['next_step'])
-    print('These are local checks. No settings were changed and no SSH connection was opened.')

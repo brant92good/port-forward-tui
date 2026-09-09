@@ -34,7 +34,7 @@ class Settings(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-dialog"):
-            yield Static("SETTINGS", classes="dialog-title")
+            yield Static("Settings", classes="dialog-title")
             yield Label("When I return to the app, look for my last-used tab in:")
             yield OptionList(*SCOPE_LABELS, id="focus-scope")
             yield Static("Up / Down chooses. Enter saves. Esc cancels.\n"
@@ -105,15 +105,15 @@ class EditForward(ModalScreen[Forward | None]):
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="edit-dialog"):
-            yield Label("ADD A CONNECTION" if self.create else "EDIT SAVED CONNECTION", classes="dialog-title")
+            yield Label("Add connection" if self.create else "Edit connection", classes="dialog-title")
             if self.machine_label:
                 yield Static('Server: ' + self.machine_label, markup=False, classes='muted')
             if not self.create:
                 yield Label("Name")
                 yield Input(self.rule.name, id="name", max_length=80)
-            yield Label("Port used by the app on your REMOTE computer")
+            yield Label("App port on the server")
             yield Input("" if self.create else str(self.rule.remote_port), placeholder="Example: 8000", id="remote", max_length=5)
-            yield Label("Port on THIS computer (leave blank to use the same number)")
+            yield Label("Port on this computer (blank uses the same number)")
             yield Input("" if self.create else str(self.rule.local_port), id="local", max_length=5)
             if self.create:
                 yield Label("Name (optional)")
@@ -157,7 +157,7 @@ class Help(ModalScreen):
 [bold]Open a remote app on this computer[/]
 A port is the number in an app address, such as 8000 in localhost:8000.
 This app connects a port here to an app on your remote computer using SSH.
-The remote app must already be running; this tool does not start it.
+Start the app on the server before opening its forwarded address.
 
 Press A for a form, or type a number then Enter to save and connect.
   8000          this computer 8000 -> remote computer 8000
@@ -237,7 +237,7 @@ class PortApp(App):
         yield Header()
         with Vertical(id="main"):
             yield Static(f"Machine: {self.store.machine_name or self.store.host}  |  {self.store.host}  |  H: change machine", id="destination", markup=False)
-            yield Static("CONNECT TO A REMOTE APP", classes="section-label")
+            yield Static("Connect to a remote app", classes="section-label")
             yield Input(placeholder="8000  or  18000:8000  [optional name]", id="quick", max_length=100, select_on_focus=False)
             yield Static("Type the remote app's port + Enter, or press A for a form. ? explains ports.", classes="muted", id="hint")
             yield DataTable(id="forwards", cursor_type="row", zebra_stripes=True)

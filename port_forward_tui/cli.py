@@ -28,7 +28,7 @@ def arguments(argv):
     machines = commands.add_parser('machines', help='List, add or import machines without connecting', parents=[shared])
     machine_commands = machines.add_subparsers(dest='machine_command', required=True, parser_class=Parser)
     machine_commands.add_parser('list', parents=[shared], help='List saved machines')
-    add = machine_commands.add_parser('add', parents=[shared], help='Save a machine; no SSH connection is opened')
+    add = machine_commands.add_parser('add', parents=[shared], help='Save a machine')
     add.add_argument('target', help='SSH config alias or user@address')
     add.add_argument('--name', default='')
     add.add_argument('--ssh-port', type=port, help='Optional SSH login port, not the forwarded app port')

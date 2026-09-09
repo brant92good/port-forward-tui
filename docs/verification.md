@@ -1,5 +1,14 @@
 # Verification
 
+## Copy and screenshot update, September 9, 2026
+
+The affected machine-picker, add-form, combined-list, app and CLI modules passed
+37 tests locally. These checks use isolated favorites and local controller
+fixtures. The machine, connection, add and settings screenshots were regenerated
+from the real app with example data and visually inspected. Labels and help now
+describe the action directly; the add form identifies the server's app port and
+the port on this computer. No process lifecycle or shortcut behavior changed.
+
 These are the checks behind the behavior described in the README. Results
 below were recorded on September 8, 2026. They establish behavior under the
 listed conditions; they do not establish adoption or compatibility with every PC.

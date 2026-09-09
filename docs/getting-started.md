@@ -54,7 +54,7 @@ Host workbox
 Background connections cannot ask you for a password. Set up an SSH key, and
 load a passphrase-protected key into Windows `ssh-agent` if needed. Microsoft's
 [Windows SSH key guide](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement)
-walks through that step. Never paste a private key into an issue or an agent chat.
+walks through that step.
 
 **2. Download and install.** Choose a folder you will keep; shortcuts point to it.
 
@@ -65,12 +65,10 @@ cd port-forward-tui
 .\open.ps1
 ```
 
-Installation does not ask for a host. On first launch, press A to add a machine
+On first launch, press A to add a machine
 or I to preview and import SSH names. Select a machine with Enter.
-See [machines and SSH import](machines.md) for the complete keyboard flow. Setup installs packages in a private `.venv`
-folder and adds an entry to the Terminal dropdown. It does not open SSH or start
-your saved connections. Global Python packages, PATH and other Terminal profiles
-are preserved.
+See [machines and SSH import](machines.md) for the complete keyboard flow. Setup
+installs packages in `.venv` and adds an entry to the Terminal dropdown.
 
 For a particular Python installation:
 `.\install.ps1 -Python 'C:\path\to\python.exe'`.
@@ -90,7 +88,7 @@ This sets policy for that invocation, not for the whole computer.
 
 ![The add form explains remote and local ports and defaults to the same number](screenshots/add-connection.svg)
 
-*Actual add form: Esc → A, with example remote port 8000 and name “My web app”.
+*Add form: Esc → A, with example remote port 8000 and name “My web app”.
 Tab moves between fields. N opens quick entry; E edits an existing favorite.*
 
 Prefer fewer keystrokes? Just type **`8000` then Enter** in the main screen.
@@ -129,8 +127,7 @@ sign-out ends running tunnels; favorites remain saved and OFF next time.
 .\doctor.ps1
 ```
 
-This prints local setup checks with next steps. It does not change settings or
-try to log in remotely. Python must be available to run the checks.
+This prints setup checks and suggested fixes.
 
 | What you see | What to do next |
 | --- | --- |
@@ -141,6 +138,5 @@ try to log in remotely. Python must be available to run the checks.
 | Local port already in use | Press E and change the port on **this computer**; keep the remote app's port. |
 | ON but the page will not open | Confirm the remote app is running and using the expected port/protocol. |
 
-Only this computer can use the local listener (`127.0.0.1`). This does not
-publish your development app to the internet. Favorites live in
-`%LOCALAPPDATA%\PortForwardTUI\forwards.json`; keep that folder private.
+Connections listen on `127.0.0.1`. Favorites are saved in
+`%LOCALAPPDATA%\PortForwardTUI\forwards.json`.

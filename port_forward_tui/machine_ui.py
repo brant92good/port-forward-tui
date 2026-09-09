@@ -23,15 +23,14 @@ class AddMachine(ModalScreen[Machine | None]):
 
     def compose(self):
         with VerticalScroll(id='machine-form'):
-            yield Label('ADD A MACHINE', classes='dialog-title')
+            yield Label('Add a machine', classes='dialog-title')
             yield Label('SSH name or user@address')
             yield Input(placeholder='workbox  or  alex@server.example.com', id='target')
             yield Label('Name (optional)')
             yield Input(placeholder='My development server', id='machine-name', max_length=80)
             yield Label('SSH login port (optional; blank uses your SSH settings, normally 22)')
             yield Input(placeholder='22', id='ssh-port', max_length=5)
-            yield Static('This is the login port, not your web app\'s port.\n'
-                         'Uses your existing SSH keys / agent. Saving does not connect.', classes='muted')
+            yield Static('Use the SSH login port here. Add app ports after selecting the machine.', classes='muted')
             yield Static('', id='machine-error', markup=False)
             with Horizontal(classes='buttons'):
                 yield Button('Save machine', id='save-machine', variant='primary')
@@ -69,13 +68,12 @@ class ImportMachines(ModalScreen[list[Machine] | None]):
 
     def compose(self):
         with VerticalScroll(id='machine-import'):
-            yield Label('IMPORT FROM SSH CONFIG', classes='dialog-title')
-            yield Label('Configuration file (your keys stay where they are)')
+            yield Label('Import SSH hosts', classes='dialog-title')
+            yield Label('SSH config file')
             yield Input(str(Path.home() / '.ssh/config'), id='config-path')
             yield Button('Read host names', id='scan-config')
             yield SelectionList(id='import-hosts')
-            yield Static('Space selects a machine. Ctrl+S imports the selected names.\n'
-                         'No login is attempted. OpenSSH still handles keys, jumps and other settings.', classes='muted')
+            yield Static('Space selects a machine. Ctrl+S imports the selected names.', classes='muted')
             yield Static('', id='import-error', markup=False)
             with Horizontal(classes='buttons'):
                 yield Button('Import selected', id='import-selected', variant='primary')
@@ -146,7 +144,6 @@ class MachinePicker(App[str | None]):
         yield Header()
         with Vertical(id='machine-picker'):
             yield Static(self.purpose, classes='dialog-title', markup=False)
-            yield Static('Each machine keeps its own favorites. Existing background connections keep running.', classes='muted')
             yield Input(placeholder='Filter machines by name or address', id='machine-search')
             yield OptionList(id='machines')
             yield Static('A adds a machine. I imports names from your SSH config. Enter opens the selected machine.', id='picker-message', markup=False)
