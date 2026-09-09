@@ -1,6 +1,6 @@
 # Native verification
 
-Updated September 10, 2026. Native v0.7.1 is a release candidate. Results below
+Updated September 10, 2026. Native v0.7.1 has published compiled builds. Results below
 describe their actual fixtures, not every developer's computer.
 
 ## Verified locally on Windows
@@ -33,7 +33,7 @@ Native screenshots use the actual Ratatui list/form widgets with synthetic
 machines and states. `cargo run --example capture` reproduces them without SSH.
 Headless browser visual inspection and independent A-versus-N review passed.
 
-## Cross-platform qualification in progress
+## Cross-platform qualification
 
 The first matrix exposed a Unix reconnect failure after a used socket entered
 TIME_WAIT. `9affbaa` adds a Unix-only reuse-address preflight, matching SSH's
@@ -83,13 +83,24 @@ The corrected release is v0.7.1.
 The actual local Windows ZIP passed fresh-install/update checks in an isolated
 Unicode/apostrophe path, checksum-failure refusal, non-owned-directory refusal,
 saved-data preservation and a polluted Python/Conda environment. No live user
-settings or controllers were used. Actual public HTTPS downloads remain a
-separate release gate on Windows x64, Linux x64/ARM64 and macOS ARM64/Intel.
+settings or controllers were used.
+
+The immutable v0.7.1 runtime is `ca58e069f923bb108c3e05ef5e9a6e4726606e4e`.
+All five native jobs, release packaging, and all five actual public HTTPS
+install/update jobs passed in
+[run 34387071375](https://github.com/brant92good/port-forward-tui/actions/runs/34387071375).
+Targets were Windows x64, Linux x64/ARM64 and macOS ARM64/Intel. The advertised
+installer was downloaded over HTTPS, then downloaded the published binary bundle;
+the tests did not substitute a local package.
+
+The Windows HTTPS check was repeated locally without changing the user's PATH.
+Fresh install, update, invalid checksum rejection, directory ownership, saved
+favorites, Unicode/quoted paths and polluted environment all passed. Its executable
+SHA-256 was `b03ae622b861c3a76ab383bf26dcf61600bde794106f94fb40105d66c5b7ee5b`.
 
 ## Not established by these checks
 
 - Real OpenSSH transport on Windows and macOS: not covered by the Linux fixture.
-- Final published HTTPS installation on all advertised targets: pending release.
 - Native Windows desktop focus/taskbar/Explorer behavior: integration-layer
   evidence must be checked separately, using owned test windows.
 - Physical laptop sleep, Wi-Fi roaming and enterprise VPN conditions.

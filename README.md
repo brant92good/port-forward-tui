@@ -15,10 +15,8 @@ terminal closed.
 
 [Install](#install) · [First connection](#first-connection) · [Agent commands](#commands-for-your-agent) · [How it works](docs/reference.md)
 
-> Native release candidate: the Rust implementation is under verification on
-> this branch. The installation commands below target v0.7.1 and become usable
-> when its release assets are published. Stable v0.6.0 still uses the earlier
-> Python implementation. See [current evidence](docs/verification.md).
+Compiled downloads are available for Windows, Linux, and macOS beta.
+[Install and recovery checks](docs/verification.md) cover the released v0.7.1 builds.
 
 ![Ports showing saved connections across servers](docs/screenshots/connections.svg)
 
