@@ -290,24 +290,42 @@ impl Lock {
 }
 pub fn absolute(path: &Path) -> Result<PathBuf> {
     let path = std::path::absolute(path)?;
-    let mut ancestor = path.as_path();
-    let mut missing = Vec::new();
-    while !ancestor.exists() {
-        missing.push(ancestor.file_name().context("Invalid path")?.to_os_string());
-        ancestor = ancestor.parent().context("Invalid path")?;
-    }
-    let mut result = fs::canonicalize(ancestor)?;
-    #[cfg(windows)]
-    {
-        let value = result.to_string_lossy();
-        result = if let Some(unc) = value.strip_prefix("\\\\?\\UNC\\") {
-            PathBuf::from(format!("\\\\{unc}"))
-        } else {
-            PathBuf::from(value.strip_prefix("\\\\?\\").unwrap_or(&value))
-        };
-    }
-    for item in missing.into_iter().rev() {
-        result.push(item);
+    let mut result = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                result.pop();
+            }
+            std::path::Component::CurDir => {}
+            _ => result.push(part.as_os_str()),
+        }
+        if matches!(part, std::path::Component::Normal(_)) && result.exists() {
+            result = fs::canonicalize(&result)?;
+            #[cfg(windows)]
+            {
+                let text = result.to_string_lossy();
+                result = if let Some(unc) = text.strip_prefix("\\\\?\\UNC\\") {
+                    PathBuf::from(format!("\\\\{unc}"))
+                } else {
+                    PathBuf::from(text.strip_prefix("\\\\?\\").unwrap_or(&text))
+                };
+            }
+        }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    #[test]
+    fn missing_parent_segments_resolve_without_creating_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        assert_eq!(
+            absolute(&temp.path().join("missing/../data")).unwrap(),
+            absolute(&temp.path().join("data")).unwrap()
+        );
+        assert!(!temp.path().join("missing").exists());
+        assert!(!temp.path().join("data").exists());
+    }
 }

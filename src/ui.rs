@@ -112,38 +112,82 @@ struct Operation {
     command: &'static str,
     args: Value,
 }
-enum Job {
-    Poll(u64),
-    Change(Operation),
-}
 enum Update {
     Rows(u64, Result<Vec<Entry>>),
     Changed(Result<Value>),
 }
 struct Worker {
-    sender: SyncSender<Job>,
+    polls: SyncSender<u64>,
+    changes: SyncSender<Operation>,
     receiver: Receiver<Update>,
 }
 impl Worker {
     fn new(catalog: Catalog) -> Self {
-        let (sender, jobs) = mpsc::sync_channel(1);
+        let (polls, jobs) = mpsc::sync_channel(1);
+        let (changes, operations) = mpsc::sync_channel(1);
         let (results, receiver) = mpsc::channel();
+        let poll_results = results.clone();
+        let poll_catalog = catalog.clone();
         thread::spawn(move || {
-            while let Ok(job) = jobs.recv() {
-                let update = match job {
-                    Job::Poll(generation) => Update::Rows(generation, load_entries(&catalog, true)),
-                    Job::Change(operation) => Update::Changed(perform(&operation)),
-                };
-                if results.send(update).is_err() {
+            while let Ok(generation) = jobs.recv() {
+                if poll_results
+                    .send(Update::Rows(generation, load_entries(&poll_catalog, true)))
+                    .is_err()
+                {
                     break;
                 }
             }
         });
-        Self { sender, receiver }
+        thread::spawn(move || {
+            while let Ok(operation) = operations.recv() {
+                if results
+                    .send(Update::Changed(perform(&catalog, &operation)))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+        Self {
+            polls,
+            changes,
+            receiver,
+        }
     }
 }
-fn perform(operation: &Operation) -> Result<Value> {
-    if operation.command == "restart" {
+fn perform(catalog: &Catalog, operation: &Operation) -> Result<Value> {
+    if matches!(operation.command, "start" | "restart" | "upsert") {
+        let rows = load_entries(catalog, true)?;
+        check_port_conflict(operation, &rows)?;
+    }
+    if operation.command == "stop_listed" {
+        let mut errors = Vec::new();
+        for row in operation.args["machines"]
+            .as_array()
+            .context("Missing listed machines")?
+        {
+            let directory = PathBuf::from(
+                row["directory"]
+                    .as_str()
+                    .context("Missing machine directory")?,
+            );
+            if directory.join("endpoint.json").exists()
+                && let Err(error) =
+                    background::exchange(&directory, "stop_all", json!({}), Duration::from_secs(5))
+            {
+                errors.push(format!(
+                    "{}: {error:#}",
+                    row["name"].as_str().unwrap_or("Machine")
+                ));
+            }
+        }
+        anyhow::ensure!(
+            errors.is_empty(),
+            "Some servers could not be stopped: {}",
+            errors.join("; ")
+        );
+        Ok(json!({"ok":true}))
+    } else if operation.command == "restart" {
         background::call(&operation.directory, "stop", operation.args.clone())?;
         background::call(&operation.directory, "start", operation.args.clone())
     } else {
@@ -153,6 +197,75 @@ fn perform(operation: &Operation) -> Result<Value> {
             operation.args.clone(),
         )
     }
+}
+// An enabled connection reserves its local port in this manager even while its
+// network is down. Re-read live status near dispatch, rather than trusting the
+// last painted frame. The SSH process remains the final OS-level bind check.
+fn check_port_conflict(operation: &Operation, rows: &[Entry]) -> Result<()> {
+    let rule = if operation.command == "upsert" {
+        let rule: Forward = serde_json::from_value(operation.args["rule"].clone())?;
+        let active = rows.iter().any(|row| {
+            row.machine.directory == operation.directory
+                && row.rule.as_ref().is_some_and(|old| old.id == rule.id)
+                && requested(&row.state)
+        });
+        if operation.args["start"] != true && !active {
+            return Ok(());
+        }
+        Some(rule)
+    } else if matches!(operation.command, "start" | "restart") {
+        Store::load(&operation.directory)?
+            .settings
+            .forwards
+            .into_iter()
+            .find(|rule| operation.args["rule_id"] == rule.id)
+    } else {
+        None
+    };
+    if let Some(rule) = rule
+        && let Some(other) = rows.iter().find(|row| {
+            row.machine.directory != operation.directory
+                && requested(&row.state)
+                && row
+                    .rule
+                    .as_ref()
+                    .is_some_and(|other| other.local_port == rule.local_port)
+        })
+    {
+        anyhow::bail!(
+            "Local port {} is already requested by {} ({}). Stop that connection or choose another local port.",
+            rule.local_port,
+            other.machine.name,
+            other.state
+        );
+    }
+    Ok(())
+}
+fn quick_operation(entry: &Entry, rows: &[Entry], text: &str) -> Result<Operation> {
+    let text = text.trim();
+    let split = text.find(char::is_whitespace).unwrap_or(text.len());
+    let (local_port, remote_port) = store::quick_ports(&text[..split])?;
+    let label = text[split..].trim();
+    let previous = rows
+        .iter()
+        .filter(|row| row.machine.id == entry.machine.id)
+        .filter_map(|row| row.rule.as_ref())
+        .find(|rule| rule.local_port == local_port && rule.remote_port == remote_port);
+    let mut rule = if let Some(previous) = previous {
+        previous.clone()
+    } else {
+        Forward::new(local_port, remote_port, label)?
+    };
+    if !label.is_empty() {
+        rule.name = store::name(label, false)?;
+    }
+    let operation = Operation {
+        directory: entry.machine.directory.clone(),
+        command: "upsert",
+        args: json!({"rule":rule,"expected":previous,"start":true}),
+    };
+    check_port_conflict(&operation, rows)?;
+    Ok(operation)
 }
 pub fn choose_machine(
     catalog: &Catalog,
@@ -386,7 +499,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     let mut typing = false;
     let mut notice = String::new();
     let mut pending: Option<Operation> = None;
-    let mut in_flight = false;
+    let mut polling = false;
     let mut changing = false;
     let mut closing = false;
     let mut next_poll = Instant::now();
@@ -394,8 +507,10 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     loop {
         if let Some(worker) = &worker {
             if let Ok(update) = worker.receiver.try_recv() {
-                in_flight = false;
-                changing = false;
+                match &update {
+                    Update::Rows(..) => polling = false,
+                    Update::Changed(..) => changing = false,
+                }
                 match update {
                     Update::Rows(epoch, _) if epoch != generation => {}
                     Update::Rows(_, Ok(updated)) => {
@@ -404,6 +519,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                         rows = updated;
                     }
                     Update::Changed(Ok(snapshot)) => {
+                        generation = generation.wrapping_add(1);
                         notice = if snapshot.get("rule_id").is_some() {
                             "Favorite saved".into()
                         } else {
@@ -416,16 +532,17 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     }
                 }
             }
-            if !in_flight {
+            if !changing {
                 if let Some(operation) = pending.take() {
-                    worker.sender.send(Job::Change(operation))?;
-                    in_flight = true;
+                    generation = generation.wrapping_add(1);
+                    worker.changes.send(operation)?;
                     changing = true;
-                } else if !closing && Instant::now() >= next_poll {
-                    worker.sender.send(Job::Poll(generation))?;
-                    in_flight = true;
-                    next_poll = Instant::now() + Duration::from_millis(750);
                 }
+            }
+            if !polling && !changing && !closing && Instant::now() >= next_poll {
+                worker.polls.send(generation)?;
+                polling = true;
+                next_poll = Instant::now() + Duration::from_millis(750);
             }
         } else if let Some(local) = &mut local {
             if let Some(operation) = pending.take() {
@@ -449,7 +566,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                 next_poll = Instant::now() + Duration::from_millis(250);
             }
         }
-        if closing && !in_flight && pending.is_none() {
+        if closing && !changing && pending.is_none() {
             break;
         }
         if let Some(entry) = rows.get(selected)
@@ -511,15 +628,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                 KeyCode::Enter if pending.is_none() && !changing => {
                     let result = (|| -> Result<Operation> {
                         let entry = entry.as_ref().context("Choose a machine first.")?;
-                        let text = quick.value.trim();
-                        let split = text.find(char::is_whitespace).unwrap_or(text.len());
-                        let (local_port, remote_port) = store::quick_ports(&text[..split])?;
-                        let rule = Forward::new(local_port, remote_port, text[split..].trim())?;
-                        Ok(Operation {
-                            directory: entry.machine.directory.clone(),
-                            command: "upsert",
-                            args: json!({"rule":rule,"expected":null,"start":true}),
-                        })
+                        quick_operation(entry, &rows, &quick.value)
                     })();
                     match result {
                         Ok(operation) => {
@@ -651,8 +760,13 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                         &fields,
                         usize::from(previous.is_some()),
                         &format!(
-                            "Server: {} · saves without starting a new connection",
-                            entry.machine.name
+                            "Server: {} · {}",
+                            entry.machine.name,
+                            if previous.is_some() {
+                                "Save changes"
+                            } else {
+                                "Save and connect"
+                            }
                         ),
                     )? {
                         let result = (|| -> Result<Forward> {
@@ -673,7 +787,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                                 pending = Some(Operation {
                                     directory: entry.machine.directory.clone(),
                                     command: "upsert",
-                                    args: json!({"rule":rule,"expected":previous}),
+                                    args: json!({"rule":rule,"expected":previous,"start":previous.is_none()}),
                                 })
                             }
                             Err(error) => notice = error.to_string(),
@@ -705,18 +819,28 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                 if let Some(entry) = &entry
                     && screen::message(
                         &mut session.terminal,
-                        " Stop this server ",
-                        &format!(
-                            "Stop all requested forwards for {}? Other servers keep running.",
-                            entry.machine.name
-                        ),
+                        " Stop connections ",
+                        &if persistent {
+                            "Stop all forwards and pending retries on every listed server?".into()
+                        } else {
+                            format!("Stop all forwards for {}?", entry.machine.name)
+                        },
                         true,
                     )?
                 {
                     pending = Some(Operation {
                         directory: entry.machine.directory.clone(),
-                        command: "stop_all",
-                        args: json!({}),
+                        command: if persistent {
+                            "stop_listed"
+                        } else {
+                            "stop_all"
+                        },
+                        args: if persistent {
+                            let machines=rows.iter().map(|row|(row.machine.id.clone(),json!({"name":row.machine.name,"directory":row.machine.directory}))).collect::<std::collections::BTreeMap<_,_>>();
+                            json!({"machines":machines.into_values().collect::<Vec<_>>()})
+                        } else {
+                            json!({})
+                        },
                     });
                 }
             }
@@ -725,4 +849,4 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     }
     Ok(())
 }
-const HELP: &str = "Quick entry: type 8000 then Enter, or 18000:8000 API. The first number is local; the second is the server's app port. A opens the full form.\n\n↑/↓ select · Enter/Space start or stop · N quick entry\nA add favorite · E edit · D delete · B open local URL\nR reconnect · S stop selected server · H manage machines\nF2 return shortcut scope · Q / Ctrl+Q close view\n\nFavorites start OFF. Started forwards retry network failures after 2 seconds, increasing to at most 30 seconds. Enter stops pending retries. Authentication, host-key and occupied-port errors need attention.\n\nBackground is on by default. Closing a tab or the entire terminal leaves the controller running. Signing out or rebooting ends it. --foreground stops the view's connections when it closes.\n\nFor first-time host trust or login problems, run ssh YOUR_ALIAS in a shell. Encrypted keys need ssh-agent. ON confirms an owned local listener, not the health of the remote app.";
+const HELP: &str = "Quick entry: type 8000 then Enter, or 18000:8000 API. The first number is local; the second is the server's app port. A opens the full form.\n\n↑/↓ select · Enter/Space start or stop · N quick entry\nA add favorite · E edit · D delete · B open local URL\nR reconnect · S stop all listed servers · H manage machines\nF2 return shortcut scope · Q / Ctrl+Q close view\n\nFavorites start OFF. Started forwards retry network failures after 2 seconds, increasing to at most 30 seconds. Enter stops pending retries. Authentication, host-key and occupied-port errors need attention.\n\nBackground is on by default. Closing a tab or the entire terminal leaves the controller running. Signing out or rebooting ends it. --foreground stops the view's connections when it closes.\n\nFor first-time host trust or login problems, run ssh YOUR_ALIAS in a shell. Encrypted keys need ssh-agent. ON confirms an owned local listener, not the health of the remote app.";

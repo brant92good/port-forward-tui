@@ -1,6 +1,8 @@
 //! Owned SSH processes and OS listener ownership. No connection probes to services.
 use crate::store::{Forward, Settings};
-use anyhow::{Context, Result, ensure};
+#[cfg(any(windows, target_os = "macos"))]
+use anyhow::ensure;
+use anyhow::{Context, Result};
 use std::{
     collections::{HashSet, VecDeque},
     io::Read,

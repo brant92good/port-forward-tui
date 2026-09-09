@@ -45,12 +45,13 @@ fn unused_port() -> u16 {
         .unwrap()
         .port()
 }
-fn wait(mut condition: impl FnMut() -> bool) {
+#[track_caller]
+fn wait(stage: &str, mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(8);
     while !condition() {
         assert!(
             Instant::now() < deadline,
-            "Owned process condition timed out"
+            "Owned process condition timed out: {stage}"
         );
         thread::sleep(Duration::from_millis(20));
     }
@@ -89,14 +90,17 @@ fn actual_owned_listener_proxy_descendants_recovery_and_other_machine_isolation(
     let (mut second, two, path_two) = fixture(temp.path(), "second", &executable);
     first.start(&one, Instant::now()).unwrap();
     second.start(&two, Instant::now()).unwrap();
-    wait(|| {
-        first.poll(Instant::now());
-        second.poll(Instant::now());
-        first.state(&one.id) == State::On
-            && second.state(&two.id) == State::On
-            && pid(&path_one, "child.pid").is_some()
-            && pid(&path_two, "child.pid").is_some()
-    });
+    wait(
+        "both original listeners ON and descendants recorded",
+        || {
+            first.poll(Instant::now());
+            second.poll(Instant::now());
+            first.state(&one.id) == State::On
+                && second.state(&two.id) == State::On
+                && pid(&path_one, "child.pid").is_some()
+                && pid(&path_two, "child.pid").is_some()
+        },
+    );
     let first_child = pid(&path_one, "child.pid").unwrap();
     let first_parent = pid(&path_one, "parent.pid").unwrap();
     let second_child = pid(&path_two, "child.pid").unwrap();
@@ -109,30 +113,39 @@ fn actual_owned_listener_proxy_descendants_recovery_and_other_machine_isolation(
     assert_eq!(&reply, b"fixture-ok");
     drop(service);
     fs::write(path_one.join("exit"), b"fail this owned process").unwrap();
-    wait(|| {
+    wait("first connection moves to RETRYING after exit", || {
         first.poll(Instant::now());
         first.state(&one.id) == State::Retrying
     });
-    wait(|| !views::process_alive(first_parent) && !views::process_alive(first_child));
+    wait("first exited parent and proxy descendant are gone", || {
+        !views::process_alive(first_parent) && !views::process_alive(first_child)
+    });
     second.poll(Instant::now());
     assert_eq!(second.state(&two.id), State::On);
     assert!(views::process_alive(second_child));
     fs::remove_file(path_one.join("exit")).unwrap();
     fs::remove_file(path_one.join("child.pid")).unwrap();
-    wait(|| {
-        first.poll(Instant::now());
-        first.state(&one.id) == State::On
-            && pid(&path_one, "child.pid").is_some_and(|id| id != first_child)
-    });
+    wait(
+        "first connection recovers with a new proxy descendant",
+        || {
+            first.poll(Instant::now());
+            first.state(&one.id) == State::On
+                && pid(&path_one, "child.pid").is_some_and(|id| id != first_child)
+        },
+    );
     let recovered_child = pid(&path_one, "child.pid").unwrap();
     let recovered_parent = pid(&path_one, "parent.pid").unwrap();
     first.stop(&one.id);
-    wait(|| !views::process_alive(recovered_parent) && !views::process_alive(recovered_child));
+    wait("recovered connection parent and proxy stop", || {
+        !views::process_alive(recovered_parent) && !views::process_alive(recovered_child)
+    });
     assert_eq!(first.state(&one.id), State::Off);
     second.poll(Instant::now());
     assert_eq!(second.state(&two.id), State::On);
     second.close();
-    wait(|| !views::process_alive(second_child));
+    wait("second connection proxy stops", || {
+        !views::process_alive(second_child)
+    });
     first.poll(Instant::now() + Duration::from_secs(100));
     assert_eq!(first.state(&one.id), State::Off);
 }

@@ -162,14 +162,35 @@ impl Drop for Cleanup {
 fn keyboard_form_multihost_concurrent_view_and_detach() {
     let temp = tempfile::tempdir().unwrap();
     let catalog = Catalog::new(temp.path()).unwrap();
+    let first_port = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let second_port = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     catalog
-        .add("one.example", "First server", None, None)
+        .add(
+            "127.0.0.1",
+            "First server",
+            Some(first_port.local_addr().unwrap().port()),
+            None,
+        )
         .unwrap();
     catalog
-        .add("two.example", "Second server", None, None)
+        .add(
+            "127.0.0.1",
+            "Second server",
+            Some(second_port.local_addr().unwrap().port()),
+            None,
+        )
         .unwrap();
+    drop(first_port);
+    drop(second_port);
     let machine = catalog.list().unwrap().pop().unwrap();
+    let other = catalog
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|m| m.id != machine.id)
+        .unwrap();
     let _cleanup = Cleanup::start(&machine.directory);
+    let _other_cleanup = Cleanup::start(&other.directory);
     let mut first = Session::start(temp.path(), &machine.id);
     first.expect("Saved connections");
     first.send("a");
@@ -191,8 +212,62 @@ fn keyboard_form_multihost_concurrent_view_and_detach() {
         .find(|r| r.name == "PTY API")
         .unwrap();
     assert_eq!((saved.local_port, saved.remote_port), (18009, 9009));
+    first.wait_for(|| {
+        background::exchange(
+            &machine.directory,
+            "status",
+            json!({}),
+            Duration::from_secs(2),
+        )
+        .is_ok_and(|snapshot| snapshot["states"][&saved.id] == "RETRYING")
+    });
+    first.send("n18009:9009 Renamed API\r");
+    first.wait_for(|| {
+        Store::load(&machine.directory)
+            .unwrap()
+            .settings
+            .forwards
+            .iter()
+            .any(|rule| rule.id == saved.id && rule.name == "Renamed API")
+    });
+    first.expect("Renamed API");
+    first.send("\x1b[Hn18009:9010 Collision\r");
+    first.expect("already requested");
+    first.send("\x1b");
+    first.expect("Quick forward");
+    first.send("a");
+    first.expect("App port on server");
+    first.send("9010\t18010\tOther API\r");
+    first.wait_for(|| {
+        Store::load(&other.directory)
+            .unwrap()
+            .settings
+            .forwards
+            .iter()
+            .any(|rule| rule.name == "Other API")
+    });
+    first.send("s");
+    first.expect("every listed server");
+    first.send("y");
+    first.wait_for(|| {
+        [&machine, &other].iter().all(|machine| {
+            background::exchange(
+                &machine.directory,
+                "status",
+                json!({}),
+                Duration::from_secs(2),
+            )
+            .is_ok_and(|snapshot| {
+                snapshot["states"]
+                    .as_object()
+                    .unwrap()
+                    .values()
+                    .all(|state| state == "OFF")
+            })
+        })
+    });
     let mut second = Session::start(temp.path(), &machine.id);
-    second.expect("PTY API");
+    second.expect("Renamed API");
     first.close();
     let snapshot = background::exchange(
         &machine.directory,
@@ -230,11 +305,5 @@ fn keyboard_form_multihost_concurrent_view_and_detach() {
         )
         .is_ok()
     );
-    let other = catalog
-        .list()
-        .unwrap()
-        .into_iter()
-        .find(|m| m.id != machine.id)
-        .unwrap();
-    assert!(!other.directory.join("endpoint.json").exists());
+    assert!(other.directory.join("endpoint.json").exists());
 }
