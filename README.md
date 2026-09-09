@@ -16,7 +16,7 @@ terminal closed.
 [Install](#install) · [First connection](#first-connection) · [Agent commands](#commands-for-your-agent) · [How it works](docs/reference.md)
 
 > Native release candidate: the Rust implementation is under verification on
-> this branch. The installation commands below target v0.7.0 and become usable
+> this branch. The installation commands below target v0.7.1 and become usable
 > when its release assets are published. Stable v0.6.0 still uses the earlier
 > Python implementation. See [current evidence](docs/verification.md).
 
@@ -29,14 +29,14 @@ terminal closed.
 Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.0/install.ps1 | iex
+irm https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.1/install.ps1 | iex
 ports
 ```
 
 Linux or macOS **beta**:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.1/install.sh | sh
 ```
 
 Open a new terminal and run `ports`.

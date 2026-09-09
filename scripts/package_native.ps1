@@ -8,7 +8,7 @@ New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $portsStage = Join-Path $portsRoot ('artifacts\package-' + [Guid]::NewGuid().ToString('N'))
 & (Join-Path $PSScriptRoot 'build_native.ps1') -SkipRust -OutputDirectory $portsStage
 [IO.File]::Copy([IO.Path]::GetFullPath($Binary),(Join-Path $portsStage 'ports.exe'))
-if ((& (Join-Path $portsStage 'ports.exe') --version) -ne 'ports 0.7.0' -or $LASTEXITCODE -ne 0) { throw 'Expected Ports 0.7.0.' }
+if ((& (Join-Path $portsStage 'ports.exe') --version) -ne 'ports 0.7.1' -or $LASTEXITCODE -ne 0) { throw 'Expected Ports 0.7.1.' }
 function Get-PortsPackageHash([string]$Path) {
     $portsHasher = [Security.Cryptography.SHA256]::Create(); $portsInput = [IO.File]::OpenRead($Path)
     try { ([BitConverter]::ToString($portsHasher.ComputeHash($portsInput))).Replace('-','').ToLowerInvariant() }

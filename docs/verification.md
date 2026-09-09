@@ -1,6 +1,6 @@
 # Native verification
 
-Updated September 10, 2026. Native v0.7.0 is a release candidate. Results below
+Updated September 10, 2026. Native v0.7.1 is a release candidate. Results below
 describe their actual fixtures, not every developer's computer.
 
 ## Verified locally on Windows
@@ -58,8 +58,25 @@ cancel retries, saved OFF rows remain OFF, and closing the launching command
 does not own the controllers' lifetime. The fixture uses disposable keys,
 loopback servers and explicit cleanup, not personal hosts.
 
-That matrix exposed the Windows socket inheritance defect described above;
-its fix and new regression require a fresh full matrix before release.
+The Windows socket inheritance correction passed all five platform jobs at
+`3656b4a`. Its immutable v0.7.0 tag then exposed an intermittent macOS rebind
+failure before assets were published; that tag remains unchanged.
+
+The fixed-sample [macOS diagnostics](https://github.com/brant92good/port-forward-tui/actions/runs/34385711045)
+found no failures in 24 isolated samples, but 26 failures with parallel socket
+inspection. Both the raw reuse-enabled bind and an ordinary listener returned
+EADDRINUSE, then succeeded milliseconds later. Concurrent inspection is
+implicated; the precise kernel mechanism remains an inference.
+
+The macOS preflight now allows that specific error up to 250 ms at 5 ms intervals.
+It retries only an idempotent bind, with fresh sockets; other errors return
+immediately. Windows/Linux keep one attempt. Initial success adds no wait and
+genuinely occupied ports remain rejected. The same
+[fixed observer matrix](https://github.com/brant92good/port-forward-tui/actions/runs/34386390436)
+passes on both macOS architectures, retaining raw-first failures separately from
+the corrected product result. All five native targets also passed
+[run 34386390341](https://github.com/brant92good/port-forward-tui/actions/runs/34386390341).
+The corrected release is v0.7.1.
 
 ## Installation evidence
 
@@ -80,3 +97,6 @@ separate release gate on Windows x64, Linux x64/ARM64 and macOS ARM64/Intel.
 
 [Earlier Python evidence](history/python-verification.md) is historical and must
 not be used as proof for the Rust runtime.
+
+[The local CLI measurement](performance.md) compares full Python/native process
+startup for a read-only query. It does not measure TUI paint or shortcut focus.
