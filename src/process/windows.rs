@@ -8,12 +8,15 @@ use std::{
     ptr,
 };
 use windows_sys::Win32::{
-    Foundation::{ERROR_INSUFFICIENT_BUFFER, INVALID_HANDLE_VALUE},
+    Foundation::{
+        ERROR_INSUFFICIENT_BUFFER, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation,
+    },
     NetworkManagement::IpHelper::{
         GetExtendedTcpTable, MIB_TCPROW_OWNER_PID, TCP_TABLE_OWNER_PID_LISTENER,
     },
     Networking::WinSock::{AF_INET, SO_EXCLUSIVEADDRUSE, SOL_SOCKET, WSAGetLastError, setsockopt},
     System::{
+        Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
         Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
         },
@@ -28,6 +31,26 @@ use windows_sys::Win32::{
         },
     },
 };
+
+pub fn protect_incoming_stdio() -> Result<()> {
+    // A capturing shell gives us inheritable pipe handles. Rust's stable
+    // Windows Command also inherits unrelated inheritable handles, even when
+    // its own stdio points at our daemon log. Clear only the incoming handles,
+    // once before any threads/spawns. Explicit Stdio::inherit still duplicates
+    // the requested handle for its child; our own console/pipe remains usable.
+    for kind in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        let handle = unsafe { GetStdHandle(kind) };
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            continue;
+        }
+        ensure!(
+            unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) } != 0,
+            "Could not protect the calling shell's standard handles: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+    Ok(())
+}
 
 pub fn exclusive(socket: &socket2::Socket) -> Result<()> {
     let value = 1_i32;

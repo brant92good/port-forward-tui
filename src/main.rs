@@ -9,6 +9,7 @@ use port_forward_tui::{
 use serde_json::json;
 use std::time::Duration;
 fn run(options: &Options) -> Result<i32> {
+    port_forward_tui::process::protect_incoming_stdio()?;
     if options.serve {
         background::serve(&options.data_dir)?;
         return Ok(0);

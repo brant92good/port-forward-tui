@@ -26,6 +26,13 @@ mod platform;
 
 pub type Listeners = HashSet<(u32, u16)>;
 
+/// Run once at CLI startup, before background workers or child processes exist.
+pub fn protect_incoming_stdio() -> Result<()> {
+    #[cfg(windows)]
+    platform::protect_incoming_stdio()?;
+    Ok(())
+}
+
 pub trait TunnelProcess: Send {
     fn id(&self) -> u32;
     fn exited(&mut self) -> Result<Option<i32>>;

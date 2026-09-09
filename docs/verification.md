@@ -1,7 +1,26 @@
 # Native verification
 
-Updated September 10, 2026. Native v0.7.1 has published compiled builds. Results below
+Updated September 10, 2026. Native v0.7.2 is under patch-release qualification. Results below
 describe their actual fixtures, not every developer's computer.
+
+## Windows captured-command correction
+
+A later real-machine check found that the first `save --json` could exit while
+its newly detached controller kept the calling script's output pipes open.
+The v0.7.1 tests prestarted controllers and missed this specific launch path.
+Redirecting the daemon's standard streams did not prevent Windows from inheriting
+the original incoming handles as well. At CLI startup, v0.7.2 clears inheritance
+on those incoming handles before spawning workers; explicit child console input
+and output still use their requested stream handles.
+
+`tests/native_cli_capture.rs` reproduces the failure without connecting to SSH.
+It checks first save and restart: the CLI exits, stdout/stderr reach EOF, stdin
+has no inherited reader, and the controller remains alive. It then shuts down
+only that fixture controller. The same test fails before the fix and passes
+afterward. CI runs its executable directly because Cargo itself puts tests in a
+Windows job that disallows detached children. This is an explicit separate gate,
+not a skipped behavior check. Existing ConPTY and compatibility checks remain
+required. Published v0.7.2 HTTPS evidence is pending below.
 
 ## Verified locally on Windows
 

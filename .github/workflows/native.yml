@@ -44,6 +44,14 @@ jobs:
           sudo mkdir -p /run/sshd
       - run: cargo +1.94.0 fmt --check
       - run: cargo +1.94.0 test --locked --all-targets --target ${{ matrix.target }}
+      - name: Captured first mutation and detached restart outside Cargo's Windows job
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $captureTests = @(Get-ChildItem 'target/${{ matrix.target }}/debug/deps/native_cli_capture-*.exe')
+          if ($captureTests.Count -ne 1) { throw 'Expected exactly one capture regression executable.' }
+          & $captureTests[0].FullName --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run: cargo +1.94.0 clippy --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - run: cargo +1.94.0 build --release --locked --target ${{ matrix.target }}
       - name: Historical/native controller protocol and lock compatibility
