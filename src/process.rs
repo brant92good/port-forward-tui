@@ -344,7 +344,7 @@ mod tests {
     fn unix_preflight_allows_recovery_after_traffic_but_rejects_live_listener() {
         use std::{
             io::Write,
-            net::{TcpListener, TcpStream},
+            net::{Shutdown, TcpListener, TcpStream},
         };
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let address = listener.local_addr().unwrap();
@@ -355,11 +355,19 @@ mod tests {
             .unwrap();
         let (mut service, _) = listener.accept().unwrap();
         service.write_all(b"served").unwrap();
-        // The server closes first, leaving its accepted connection in TIME_WAIT.
-        drop(service);
+        service
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        // Complete both FIN directions before asserting TIME_WAIT. Merely
+        // dropping the peer can leave an asynchronously closing connection
+        // briefly in FIN_WAIT_2 on macOS, which is not the state under test.
+        service.shutdown(Shutdown::Write).unwrap();
         let mut received = Vec::new();
         client.read_to_end(&mut received).unwrap();
         assert_eq!(received, b"served");
+        client.shutdown(Shutdown::Write).unwrap();
+        service.read_to_end(&mut Vec::new()).unwrap();
+        drop(service);
         drop(client);
         drop(listener);
         let without_reuse = socket2::Socket::new(

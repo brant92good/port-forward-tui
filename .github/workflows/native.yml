@@ -36,7 +36,12 @@ jobs:
         run: rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt --target ${{ matrix.target }}
       - name: Linux static linker and SSH test tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools openssh-server && sudo mkdir -p /run/sshd
+        run: |
+          # These tools come from Ubuntu. Unrelated preinstalled browser feeds
+          # must not block qualification when their index is being updated.
+          sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- update
+          sudo apt-get install -y musl-tools openssh-server
+          sudo mkdir -p /run/sshd
       - run: cargo +1.94.0 fmt --check
       - run: cargo +1.94.0 test --locked --all-targets --target ${{ matrix.target }}
       - run: cargo +1.94.0 clippy --locked --all-targets --target ${{ matrix.target }} -- -D warnings
