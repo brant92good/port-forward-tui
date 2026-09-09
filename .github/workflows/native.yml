@@ -44,14 +44,23 @@ jobs:
           sudo mkdir -p /run/sshd
       - run: cargo +1.94.0 fmt --check
       - run: cargo +1.94.0 test --locked --all-targets --target ${{ matrix.target }}
-      - name: Captured first mutation and detached restart outside Cargo's Windows job
+      - name: Captured first mutation and restart outside hosted process jobs
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $captureTests = @(Get-ChildItem 'target/${{ matrix.target }}/debug/deps/native_cli_capture-*.exe')
           if ($captureTests.Count -ne 1) { throw 'Expected exactly one capture regression executable.' }
-          & $captureTests[0].FullName --ignored --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/run_windows_capture.ps1 -Executable $captureTests[0].FullName -WorkingDirectory $PWD
+      - name: Retain capture diagnostics on failure
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-capture-diagnostics
+          path: |
+            ${{ runner.temp }}/ports-capture-*/result.json
+            ${{ runner.temp }}/ports-capture-*/stdout.log
+            ${{ runner.temp }}/ports-capture-*/stderr.log
+          if-no-files-found: ignore
       - run: cargo +1.94.0 clippy --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - run: cargo +1.94.0 build --release --locked --target ${{ matrix.target }}
       - name: Historical/native controller protocol and lock compatibility

@@ -26,8 +26,8 @@ use windows_sys::Win32::{
             SetInformationJobObject,
         },
         Threading::{
-            CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
-            CREATE_SUSPENDED, DETACHED_PROCESS, OpenThread, ResumeThread, THREAD_SUSPEND_RESUME,
+            CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_SUSPENDED, OpenThread, ResumeThread,
+            THREAD_SUSPEND_RESUME,
         },
     },
 };
@@ -89,10 +89,6 @@ pub fn readable(pipe: &std::process::ChildStderr) -> std::io::Result<usize> {
     }
     Ok(available as usize)
 }
-pub fn configure_daemon(command: &mut Command) {
-    command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB);
-}
-
 pub struct Group {
     handle: Option<OwnedHandle>,
 }

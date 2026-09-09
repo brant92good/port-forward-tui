@@ -9,22 +9,29 @@ A later real-machine check found that the first `save --json` could exit while
 its newly detached controller kept the calling script's output pipes open.
 The v0.7.1 tests prestarted controllers and missed this specific launch path.
 Redirecting the daemon's standard streams did not prevent Windows from inheriting
-the original incoming handles as well. At CLI startup, v0.7.2 clears inheritance
-on those incoming handles before spawning workers; explicit child console input
-and output still use their requested stream handles.
+the original incoming handles as well. Clearing inheritance on the CLI's three
+standard handles fixed direct capture, but the packaged PowerShell 5.1 and 7
+wrappers exposed additional inherited handles. The current correction uses a
+Windows process handle list containing only null stdin and the controller log.
+It preserves the caller's environment/current directory and the existing refusal
+to detach from a restrictive enclosing job. No shell helper or compiler is added
+to normal startup. [Windows handle-list contract](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
 
 `tests/native_cli_capture.rs` reproduces the failure without connecting to SSH.
 It checks first save and restart: the CLI exits, stdout/stderr reach EOF, stdin
 has no inherited reader, and the controller remains alive. It then shuts down
 only that fixture controller. The same test fails before the fix and passes
-afterward. CI runs its executable directly because Cargo itself puts tests in a
-Windows job that disallows detached children. This is an explicit separate gate,
-not a skipped behavior check. Existing ConPTY and compatibility checks remain
-required. Published v0.7.2 HTTPS evidence is pending below.
+afterward. Cargo and the hosted Windows runner both own restrictive process jobs.
+A CI-only hidden worker must prove that its owned test runs outside those jobs;
+the product's detachment behavior is unchanged. This is an explicit separate gate,
+not a skipped behavior check. Extra inherited handles and both packaged PowerShell
+wrapper chains are regression gates too. Existing ConPTY and compatibility checks
+remain required. Hosted worker and published patch HTTPS evidence are pending.
 
 ## Verified locally on Windows
 
-The working native candidate passes **20 tests** and Clippy with warnings denied.
+The working native candidate passes **22 tests** (including two ConPTY tests)
+and Clippy with warnings denied.
 Independent review passed the controller and keyboard behavior changes.
 
 - Actual loopback controller requests exercise competing edits/deletes,

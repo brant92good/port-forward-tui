@@ -13,7 +13,6 @@ use std::{
     io::Write,
     net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -423,7 +422,7 @@ pub fn serve(directory: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn launch(directory: &Path) -> Result<Child> {
+pub fn launch(directory: &Path) -> Result<crate::process::DaemonChild> {
     let directory = store::absolute(directory)?;
     fs::create_dir_all(&directory)?;
     let path = directory.join("port_forward_tui.background.log");
@@ -436,15 +435,7 @@ pub fn launch(directory: &Path) -> Result<Child> {
         );
     }
     let log = OpenOptions::new().create(true).append(true).open(path)?;
-    let mut command = Command::new(std::env::current_exe()?);
-    command
-        .args(["--serve", "--data-dir"])
-        .arg(directory)
-        .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log);
-    crate::process::configure_daemon(&mut command);
-    command.spawn().context(
+    crate::process::spawn_daemon(&std::env::current_exe()?, &directory, log).context(
         "Could not detach the background manager. Launch Ports from a normal terminal session.",
     )
 }

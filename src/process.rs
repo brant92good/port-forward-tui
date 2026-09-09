@@ -24,6 +24,15 @@ mod platform;
 #[path = "process/unix.rs"]
 mod platform;
 
+#[cfg(windows)]
+#[path = "process/windows_daemon.rs"]
+mod windows_daemon;
+#[cfg(windows)]
+pub use windows_daemon::DaemonChild;
+#[cfg(unix)]
+pub type DaemonChild = Child;
+pub type HiddenChild = DaemonChild;
+
 pub type Listeners = HashSet<(u32, u16)>;
 
 /// Run once at CLI startup, before background workers or child processes exist.
@@ -280,9 +289,40 @@ impl Drop for OwnedSsh {
     }
 }
 
-/// Detach a controller from its terminal without inheriting console handles.
-pub fn configure_daemon(command: &mut Command) {
-    platform::configure_daemon(command);
+/// Start a controller with only its null input and log output handles.
+pub fn spawn_daemon(
+    executable: &Path,
+    directory: &Path,
+    log: std::fs::File,
+) -> Result<DaemonChild> {
+    #[cfg(windows)]
+    return windows_daemon::spawn(executable, directory, log);
+    #[cfg(unix)]
+    {
+        let mut command = Command::new(executable);
+        command
+            .args(["--serve", "--data-dir"])
+            .arg(directory)
+            .stdin(Stdio::null())
+            .stdout(log.try_clone()?)
+            .stderr(log);
+        platform::configure_daemon(&mut command);
+        Ok(command.spawn()?)
+    }
+}
+
+/// Dispatch a status-only helper with null streams and inherited environment/cwd.
+/// Windows excludes all other handles and keeps the caller's job membership.
+pub fn spawn_hidden(executable: &Path, args: &[std::ffi::OsString]) -> Result<HiddenChild> {
+    #[cfg(windows)]
+    return windows_daemon::hidden(executable, args);
+    #[cfg(unix)]
+    Ok(Command::new(executable)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?)
 }
 
 /// Read-only ownership probe, also used by integration checks.
