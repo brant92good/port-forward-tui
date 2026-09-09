@@ -348,8 +348,13 @@ mod tests {
         };
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let address = listener.local_addr().unwrap();
+        #[cfg(target_os = "macos")]
+        let _observer = RebindObserver::start();
+        let diagnostic = std::env::var_os("PORTS_REBIND_DIAGNOSTIC").is_some();
+        let listener_reuse = socket2::SockRef::from(&listener).reuse_address();
         assert!(check_local_port(address.port()).is_err());
         let mut client = TcpStream::connect(address).unwrap();
+        let peer = client.local_addr().unwrap();
         client
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();
@@ -369,6 +374,7 @@ mod tests {
         service.read_to_end(&mut Vec::new()).unwrap();
         drop(service);
         drop(client);
+        let closing = Instant::now();
         drop(listener);
         let without_reuse = socket2::Socket::new(
             socket2::Domain::IPV4,
@@ -380,9 +386,143 @@ mod tests {
             without_reuse.bind(&address.into()).unwrap_err().kind(),
             std::io::ErrorKind::AddrInUse
         );
-        assert!(check_local_port(address.port()).is_ok());
+        let initial = check_local_port(address.port());
+        let initial_elapsed = closing.elapsed();
+        if diagnostic || initial.is_err() {
+            eprintln!(
+                "REBIND initial_us={} pid={} local={address} peer={peer} listener_reuse={listener_reuse:?} failed_probe_local={:?} result={initial:?}",
+                initial_elapsed.as_micros(),
+                std::process::id(),
+                without_reuse.local_addr(),
+            );
+            if let Err(error) = &initial {
+                eprintln!("REBIND initial_chain={error:#}");
+                for cause in error.chain() {
+                    if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+                        eprintln!(
+                            "REBIND initial_errno={:?} kind={:?}",
+                            io.raw_os_error(),
+                            io.kind()
+                        );
+                    }
+                }
+            }
+            // Diagnostic probes may themselves affect kernel cleanup. Keep the
+            // original result, record order/lifetime, and never turn a later
+            // successful retry into a passing original assertion.
+            rebind_pair(address, closing, "failed-nonreuse-socket-still-open");
+        }
+        drop(without_reuse);
+        if diagnostic || initial.is_err() {
+            for target in [0, 1, 10, 50, 250] {
+                let target = Duration::from_millis(target);
+                if let Some(delay) = target.checked_sub(closing.elapsed()) {
+                    thread::sleep(delay);
+                }
+                rebind_pair(address, closing, "failed-nonreuse-socket-closed");
+            }
+            #[cfg(target_os = "macos")]
+            rebind_socket_table(address.port());
+        }
+        assert!(initial.is_ok(), "Initial preflight failed: {initial:?}");
         let reopened = TcpListener::bind(address).unwrap();
         assert!(check_local_port(address.port()).is_err());
         drop(reopened);
+    }
+
+    #[cfg(unix)]
+    fn rebind_pair(address: std::net::SocketAddr, started: Instant, phase: &str) {
+        let raw = (|| -> std::io::Result<()> {
+            let socket = socket2::Socket::new(
+                socket2::Domain::IPV4,
+                socket2::Type::STREAM,
+                Some(socket2::Protocol::TCP),
+            )?;
+            socket.set_reuse_address(true)?;
+            socket.bind(&address.into())
+        })();
+        eprintln!(
+            "REBIND elapsed_us={} phase={phase} raw_reuse={raw:?} raw_errno={:?}",
+            started.elapsed().as_micros(),
+            raw.as_ref().err().and_then(std::io::Error::raw_os_error),
+        );
+        // Drop this socket before another probe; it is never an extra listener.
+        let standard = std::net::TcpListener::bind(address).map(drop);
+        eprintln!(
+            "REBIND elapsed_us={} phase={phase} std_listener={standard:?} std_errno={:?}",
+            started.elapsed().as_micros(),
+            standard
+                .as_ref()
+                .err()
+                .and_then(std::io::Error::raw_os_error),
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    fn rebind_socket_table(port: u16) {
+        // Query only after timed bind probes: observing sockets can affect
+        // their lifetime. Emit only rows containing the fixture's exact port.
+        let result = capture_bounded(
+            Command::new("/usr/sbin/netstat").args(["-anv", "-p", "tcp"]),
+            Duration::from_secs(2),
+        );
+        match result {
+            Ok((status, bytes)) => {
+                eprintln!("REBIND netstat_status={status} (snapshot after timed probes)");
+                let suffix = format!(".{port}");
+                for line in String::from_utf8_lossy(&bytes)
+                    .lines()
+                    .filter(|line| line.split_whitespace().any(|part| part.ends_with(&suffix)))
+                    .take(20)
+                {
+                    eprintln!("REBIND netstat={line}");
+                }
+            }
+            Err(error) => eprintln!("REBIND netstat_error={error:#}"),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    struct RebindObserver {
+        stop: Arc<AtomicBool>,
+        worker: Option<JoinHandle<usize>>,
+    }
+    #[cfg(target_os = "macos")]
+    impl RebindObserver {
+        fn start() -> Option<Self> {
+            std::env::var_os("PORTS_REBIND_OWNERSHIP_PROBE")?;
+            let stop = Arc::new(AtomicBool::new(false));
+            let stopping = Arc::clone(&stop);
+            let (ready, receiver) = std::sync::mpsc::channel();
+            let worker = thread::spawn(move || {
+                let mut calls = 0;
+                while !stopping.load(Ordering::Relaxed) {
+                    let result = owned_listeners(&[std::process::id()]);
+                    calls += 1;
+                    if calls == 1 {
+                        let _ = ready.send(());
+                    }
+                    if let Err(error) = result {
+                        eprintln!("REBIND ownership_probe_error={error:#}");
+                    }
+                }
+                calls
+            });
+            let ready = receiver.recv_timeout(Duration::from_secs(3));
+            eprintln!("REBIND ownership_probe_ready={ready:?}");
+            Some(Self {
+                stop,
+                worker: Some(worker),
+            })
+        }
+    }
+    #[cfg(target_os = "macos")]
+    impl Drop for RebindObserver {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Relaxed);
+            if let Some(worker) = self.worker.take() {
+                eprintln!("REBIND ownership_probe_calls={:?}", worker.join());
+            }
+        }
     }
 }

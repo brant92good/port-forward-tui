@@ -1,0 +1,76 @@
+name: macOS rebind diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches: [native-runtime]
+    paths: [.github/workflows/rebind-diagnostic.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Record host and build test-only diagnostics
+        run: |
+          sw_vers
+          uname -a
+          rustup toolchain install 1.94.0 --profile minimal
+          cargo +1.94.0 test --locked --lib --no-run
+      - name: Fixed isolated, parallel and ownership-observer samples
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, signal, subprocess
+          output = pathlib.Path('artifacts/rebind-diagnostic')
+          output.mkdir(parents=True, exist_ok=True)
+          records = []
+          test = 'process::tests::unix_preflight_allows_recovery_after_traffic_but_rejects_live_listener'
+          for case in ('isolated', 'parallel', 'ownership-observer'):
+              for sample in range(1, 13):
+                  env = dict(os.environ, PORTS_REBIND_DIAGNOSTIC='1')
+                  env.pop('PORTS_REBIND_OWNERSHIP_PROBE', None)
+                  if case == 'ownership-observer':
+                      env['PORTS_REBIND_OWNERSHIP_PROBE'] = '1'
+                  command = ['cargo', '+1.94.0', 'test', '--locked', '--offline', '--lib']
+                  if case == 'parallel':
+                      command += ['process::tests::', '--', '--test-threads=4', '--nocapture']
+                  else:
+                      command += [test, '--', '--exact', '--test-threads=1', '--nocapture']
+                  process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
+                                             stderr=subprocess.STDOUT, start_new_session=True)
+                  try:
+                      captured, _ = process.communicate(timeout=30)
+                      code, text = process.returncode, captured.decode(errors='replace')
+                  except subprocess.TimeoutExpired:
+                      # This session/group contains only the command we just
+                      # spawned and its test/lsof children, never another job.
+                      try:
+                          os.killpg(process.pid, signal.SIGKILL)
+                      except ProcessLookupError:
+                          pass
+                      captured, _ = process.communicate(timeout=5)
+                      code, text = 124, captured.decode(errors='replace') + '\nDIAGNOSTIC TIMEOUT\n'
+                  path = output / f'{case}-{sample:02}.log'
+                  path.write_text(text, encoding='utf-8')
+                  records.append(dict(case=case, sample=sample, code=code, log=str(path)))
+                  print(f'{case} sample {sample:02}: exit {code}', flush=True)
+                  if code:
+                      print(text, flush=True)
+          (output / 'summary.json').write_text(json.dumps(records, indent=2) + '\n', encoding='utf-8')
+          # Fixed sample count; preserve every failure. This is not retry-until-green.
+          raise SystemExit(1 if any(record['code'] for record in records) else 0)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: rebind-diagnostic-${{ matrix.os }}
+          path: artifacts/rebind-diagnostic
+          if-no-files-found: warn
