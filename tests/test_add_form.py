@@ -40,11 +40,16 @@ class AddFormTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.press('a')
                 self.assertEqual(app.focused.id, 'remote')
                 await pilot.press('8', '0', '0', '0', 'enter')
+                # Modal dismissal queues its save callback on the app. Drain
+                # that queue before reading the model on a busy CI runner.
+                await pilot.pause()
+                self.assertNotIsInstance(app.screen, EditForward)
                 self.assertEqual(len(store.forwards), 1)
                 first = store.forwards[0]
                 self.assertEqual((first.local_port, first.remote_port), (8000, 8000))
                 self.assertEqual(manager.status(first.id), 'ON')
                 await pilot.press('a', '8', '0', '0', '0', 'enter')
+                await pilot.pause()
                 self.assertEqual(len(store.forwards), 1)
 
     async def test_form_custom_local_port_and_cancel_do_not_change_other_favorites(self):
@@ -54,6 +59,9 @@ class AddFormTests(unittest.IsolatedAsyncioTestCase):
             app = PortApp(store, FakeManager())
             async with app.run_test() as pilot:
                 await pilot.press('a', '8', '0', '0', '0', 'tab', '1', '8', '0', '0', '0', 'enter')
+                await pilot.pause()
+                self.assertNotIsInstance(app.screen, EditForward)
+                self.assertEqual(len(store.forwards), 1)
                 self.assertEqual((store.forwards[0].local_port, store.forwards[0].remote_port), (18000, 8000))
                 await pilot.press('a', 'escape')
                 self.assertEqual(len(store.forwards), 1)

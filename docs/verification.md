@@ -9,6 +9,15 @@ from the real app with example data and visually inspected. Labels and help now
 describe the action directly; the add form identifies the server's app port and
 the port on this computer. No process lifecycle or shortcut behavior changed.
 
+One hosted Python 3.12 run observed an empty model immediately after the add
+form's Enter key. The same rapid sequence passed 30 local repetitions. The
+form tests now drain queued UI work after dismissal before checking the saved
+model, and assert that the modal closed. Textual queues the save callback on the
+requesting app; this adds test synchronization without slowing the application
+or changing the key sequence. The initial hosted failure was not reproduced
+locally, so it is recorded here rather than treated as a proven product fix.
+The full local suite then passed all 88 tests.
+
 These are the checks behind the behavior described in the README. Results
 below were recorded on September 8, 2026. They establish behavior under the
 listed conditions; they do not establish adoption or compatibility with every PC.
