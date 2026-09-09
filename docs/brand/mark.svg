@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Port Forward TUI logo</title>
+  <rect x="2" y="2" width="124" height="124" rx="28" fill="#152b39" stroke="#65d6be" stroke-width="2"/>
+  <g fill="none" stroke="#f2f5ee" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><path d="M27 50h18v28H27M101 50H83v28h18"/><path d="M45 58h10M45 70h10M73 58h10M73 70h10"/><path d="M56 64h16" stroke="#65d6be"/><path d="m60 38 4-5 4 5m-8 52 4 5 4-5" stroke="#65d6be"/></g>
+</svg>
