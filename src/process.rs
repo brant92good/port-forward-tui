@@ -80,6 +80,34 @@ pub fn ssh_executable() -> Result<PathBuf> {
 
 /// Validate availability without sending traffic to a possibly unrelated service.
 fn check_local_port(port: u16) -> Result<()> {
+    #[cfg(not(target_os = "macos"))]
+    return check_local_port_once(port);
+    #[cfg(target_os = "macos")]
+    {
+        // Concurrent socket inspection can briefly retain a closing macOS
+        // socket. Both reuse-enabled bind and a normal listener then return
+        // EADDRINUSE. Give only that idempotent availability check a bounded
+        // grace period; never retry an SSH command or a controller mutation.
+        let deadline = Instant::now() + Duration::from_millis(250);
+        loop {
+            let result = check_local_port_once(port);
+            if result.as_ref().err().is_some_and(|error| {
+                error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.raw_os_error() == Some(libc::EADDRINUSE))
+            }) {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if !remaining.is_zero() {
+                    thread::sleep(remaining.min(Duration::from_millis(5)));
+                    continue;
+                }
+            }
+            return result;
+        }
+    }
+}
+
+fn check_local_port_once(port: u16) -> Result<()> {
     let socket = socket2::Socket::new(
         socket2::Domain::IPV4,
         socket2::Type::STREAM,
@@ -386,9 +414,18 @@ mod tests {
             without_reuse.bind(&address.into()).unwrap_err().kind(),
             std::io::ErrorKind::AddrInUse
         );
-        let initial = check_local_port(address.port());
+        // Retain the raw first attempt so diagnostics can show the original
+        // transient still exists while the product handles it within its bound.
+        let initial = check_local_port_once(address.port());
         let initial_elapsed = closing.elapsed();
+        let bounded_started = Instant::now();
+        let bounded = check_local_port(address.port());
+        let bounded_elapsed = bounded_started.elapsed();
         if diagnostic || initial.is_err() {
+            eprintln!(
+                "REBIND bounded_us={} result={bounded:?}",
+                bounded_elapsed.as_micros()
+            );
             eprintln!(
                 "REBIND initial_us={} pid={} local={address} peer={peer} listener_reuse={listener_reuse:?} failed_probe_local={:?} result={initial:?}",
                 initial_elapsed.as_micros(),
@@ -407,9 +444,8 @@ mod tests {
                     }
                 }
             }
-            // Diagnostic probes may themselves affect kernel cleanup. Keep the
-            // original result, record order/lifetime, and never turn a later
-            // successful retry into a passing original assertion.
+            // Diagnostic probes may affect cleanup. They run after the product
+            // check; retain and report its result without retrying the test.
             rebind_pair(address, closing, "failed-nonreuse-socket-still-open");
         }
         drop(without_reuse);
@@ -424,10 +460,30 @@ mod tests {
             #[cfg(target_os = "macos")]
             rebind_socket_table(address.port());
         }
-        assert!(initial.is_ok(), "Initial preflight failed: {initial:?}");
+        assert!(bounded.is_ok(), "Bounded preflight failed: {bounded:?}");
         let reopened = TcpListener::bind(address).unwrap();
         assert!(check_local_port(address.port()).is_err());
         drop(reopened);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_live_port_remains_rejected_after_bounded_grace_period() {
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let started = Instant::now();
+        let result = check_local_port(listener.local_addr().unwrap().port());
+        let elapsed = started.elapsed();
+        assert!(result.is_err(), "A live listener must never pass preflight");
+        assert!(elapsed >= Duration::from_millis(250));
+        assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
+        assert_eq!(
+            result
+                .unwrap_err()
+                .downcast_ref::<std::io::Error>()
+                .unwrap()
+                .raw_os_error(),
+            Some(libc::EADDRINUSE)
+        );
     }
 
     #[cfg(unix)]

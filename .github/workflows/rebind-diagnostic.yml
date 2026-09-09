@@ -60,12 +60,15 @@ jobs:
                       code, text = 124, captured.decode(errors='replace') + '\nDIAGNOSTIC TIMEOUT\n'
                   path = output / f'{case}-{sample:02}.log'
                   path.write_text(text, encoding='utf-8')
-                  records.append(dict(case=case, sample=sample, code=code, log=str(path)))
-                  print(f'{case} sample {sample:02}: exit {code}', flush=True)
+                  raw_failed = 'REBIND initial_errno=' in text
+                  records.append(dict(case=case, sample=sample, code=code,
+                                      original_raw_failed=raw_failed, log=str(path)))
+                  print(f'{case} sample {sample:02}: product exit {code}; original raw failure {raw_failed}', flush=True)
                   if code:
                       print(text, flush=True)
           (output / 'summary.json').write_text(json.dumps(records, indent=2) + '\n', encoding='utf-8')
-          # Fixed sample count; preserve every failure. This is not retry-until-green.
+          # Preserve the raw first-attempt failures separately. The product's
+          # bounded check and live-listener refusal must pass every fixed sample.
           raise SystemExit(1 if any(record['code'] for record in records) else 0)
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
