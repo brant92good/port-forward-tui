@@ -29,6 +29,7 @@ public static class FocusHelper {
         public int pid;
         public long started;
         public string runtime_id;
+        public string title;
         public long last_focus;
     }
 
@@ -151,7 +152,8 @@ public static class FocusHelper {
             }
             string value;
             if (options.ContainsKey("-ResolveOrigin")) {
-                var originTab = Tabs(false).FirstOrDefault(t => t.title == options["-OriginTitle"]);
+                var origins = Tabs(false).Where(t => t.title == options["-OriginTitle"]).ToArray();
+                var originTab = origins.Length == 1 ? origins[0] : null;
                 if (originTab == null) return 1;
                 Console.WriteLine(Json.Serialize(new { window = originTab.window }));
                 return 0;
@@ -170,7 +172,8 @@ public static class FocusHelper {
                 Mark("tabs_enumerated");
                 long origin = 0;
                 if (options.TryGetValue("-OriginTitle", out value)) {
-                    var launcher = tabs.FirstOrDefault(t => t.title == value);
+                    var origins = tabs.Where(t => t.title == value).ToArray();
+                    var launcher = origins.Length == 1 ? origins[0] : null;
                     if (launcher == null) return 1;
                     origin = launcher.window;
                 }
@@ -180,12 +183,19 @@ public static class FocusHelper {
                 if (records != null) {
                     foreach (var record in records.OrderByDescending(r => r.last_focus)) {
                         if (!Alive(record)) continue;
-                        var match = tabs.FirstOrDefault(t => t.runtime_id == record.runtime_id && (!local || t.window == origin));
+                        // New native views carry the actual Terminal runtime ID.
+                        // Old Ports records can use their generated title only
+                        // when it identifies exactly one tab, never first-match.
+                        var matches = tabs.Where(t => (!local || t.window == origin) &&
+                            (!String.IsNullOrEmpty(record.runtime_id) ? t.runtime_id == record.runtime_id :
+                             !String.IsNullOrEmpty(record.title) && t.title == record.title)).ToArray();
+                        var match = matches.Length == 1 ? matches[0] : null;
                         if (match != null) { candidates.Add(match); break; }
                     }
                 } else {
                     foreach (string title in titles) {
-                        var match = tabs.FirstOrDefault(t => t.title == title && (!local || t.window == origin));
+                        var matches = tabs.Where(t => t.title == title && (!local || t.window == origin)).ToArray();
+                        var match = matches.Length == 1 ? matches[0] : null;
                         if (match != null) { candidates.Add(match); break; }
                     }
                 }
@@ -193,7 +203,7 @@ public static class FocusHelper {
                     Mark("target_chosen");
                     if (options.TryGetValue("-ReadyEvent", out value)) {
                         if (origin == 0) return 1;
-                        // Let the Python launcher exit, then finish in this same
+                        // Let the invoking launcher exit, then finish in this same
                         // process instead of starting a second focus helper.
                         using (var ready = EventWaitHandle.OpenExisting(value)) ready.Set();
                         if (!WaitForParent(options["-AfterPid"])) return 1;

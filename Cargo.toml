@@ -1,0 +1,48 @@
+[package]
+name = "port-forward-tui"
+version = "0.7.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Saved SSH forwards for remote development"
+repository = "https://github.com/brant92good/port-forward-tui"
+
+[lib]
+name = "port_forward_tui"
+
+[[bin]]
+name = "ports"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+crossterm = "=0.29.0"
+ratatui = { version = "=0.30.2", default-features = false, features = ["crossterm_0_29", "layout-cache"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3"
+fs2 = "0.4"
+dirs = "6"
+glob = "0.3"
+which = "8"
+ctrlc = "3"
+unicode-width = "0.2"
+socket2 = { version = "0.6", features = ["all"] }
+
+[dev-dependencies]
+portable-pty = "0.9"
+vt100 = "0.16"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1

@@ -13,6 +13,8 @@ ssh-views/
 herdr-views/
 local-herdr-views/
 *.lock
+!Cargo.lock
+/target/
 *.tmp
 artifacts/
 dist/
