@@ -15,8 +15,8 @@ terminal closed.
 
 [Install](#install) · [First connection](#first-connection) · [Agent commands](#commands-for-your-agent) · [How it works](docs/reference.md)
 
-> Development: opt-in automatic opening is being qualified for v0.8.1.
-> The install commands below use published v0.7.3; macOS remains beta.
+> v0.8.1 adds per-favorite **Open automatically** in F2 settings.
+> Compiled releases are available for Windows and Linux; macOS remains beta.
 > [What was tested](docs/verification.md).
 
 ![Ports showing saved connections across servers](docs/screenshots/connections.svg)
@@ -28,14 +28,14 @@ terminal closed.
 Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.3/install.ps1 | iex
+irm https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.8.1/install.ps1 | iex
 ports
 ```
 
 Linux or macOS **beta**:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.7.3/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.8.1/install.sh | sh
 ```
 
 Open a new terminal and run `ports`.
@@ -128,8 +128,9 @@ ports auto-open FAVORITE_ID --machine MACHINE_ID --on --json
 
 Use IDs returned by the previous command. `save` records a favorite; `start`
 opens it. `auto-open --on` saves the new-view preference; `--off` disables it.
-Neither changes the current connection state. JSON results distinguish ON, CONNECTING, RETRYING, ERROR, and unobserved
-status. [CLI contract](docs/automation.md) · [Agent instructions](AGENTS.md).
+Changing that preference does not start or stop the current connection. JSON
+results distinguish ON, CONNECTING, RETRYING, ERROR, and unobserved status.
+[CLI contract](docs/automation.md) · [Agent instructions](AGENTS.md).
 
 ## Evidence, scope, and contributing
 

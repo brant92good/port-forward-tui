@@ -1,8 +1,8 @@
 # Native verification
 
-## Automatic opening candidate
+## v0.8.1 automatic opening
 
-The v0.8.1 development candidate adds per-favorite opt-in preferences. Local
+The v0.8.1 release adds per-favorite opt-in preferences. Local
 Windows tests cover separate metadata/unchanged legacy schema, concurrent
 preference edits, malformed options, frozen destination/favorite checks and
 read-only CLI behavior. Actual ConPTY checks use isolated controllers and
@@ -10,7 +10,30 @@ owned SSH-shaped loopback processes: new-view starts across two machines,
 concurrent views retaining running PIDs, manual Stop surviving refresh,
 new-view reapplication, Quit/Stop-all cancellation, retrying port reservations
 and foreground-only scope/cleanup. No personal forward or desktop window is
-used. Hosted release and public HTTPS qualification are still pending.
+used. Independent review replayed the automatic-opening ConPTY cases, metadata
+checks and forced-app-exit cleanup. Additional regressions cover three queued
+manual Stops, repeated-key coalescing, persistent per-rule failures, and changed
+preferences/destinations while controller preparation is delayed.
+
+The immutable runtime is `78b183021f22b7380faef3334ade9ec50696c474`.
+All five native target jobs, publication and five actual public HTTPS
+install/update jobs passed in
+[run 34476916550](https://github.com/brant92good/port-forward-tui/actions/runs/34476916550).
+Windows x64, Linux x64/ARM64 and macOS Intel/Apple Silicon used the advertised
+installer and actual release downloads. Windows additionally passed native
+new-view automatic opening through an existing historical Python controller,
+including simultaneous views retaining the same SSH process and manual Stop.
+The Windows ZIP SHA-256 is
+`34cdcdc34768785d919d6059e6d757efaa2d481e39babf45d375009e9a32e0b8`.
+
+Independent Windows downloads verified the ZIP sidecar and all three bundled
+binary hashes. The executable SHA-256 is
+`79d26dc35f7342f57ef8ffc1fd1f7b75d71c431dd0b65b6f84dc4cebbc8fb735`.
+Actual HTTPS fresh installation and update also passed locally under Windows
+PowerShell 5.1 and PowerShell 7.6.6. The saved forwards stayed byte-identical and
+an enabled automatic-opening preference survived the update. Metadata edits and
+read-only listing created no controller; listing correctly reported UNKNOWN
+with `background: not_connected`, rather than inventing an observed OFF state.
 
 The v0.8.0 tag remains immutable and has no assets. Its ARM64 release test
 waited for a brief settings-save message that a concurrent automatic completion
@@ -18,6 +41,15 @@ could replace. The saved preference and OFF state were correct. v0.8.1 changes
 that test to inspect the durable saved value and selected-row detail; application
 behavior is unchanged. The original five-platform candidate passed in
 [run 34475514796](https://github.com/brant92good/port-forward-tui/actions/runs/34475514796).
+
+The separate historical Python UI suite had one first-attempt form-dismissal
+failure in
+[run 34476916541](https://github.com/brant92good/port-forward-tui/actions/runs/34476916541).
+That UI and test are unchanged from v0.7.3. The exact case passed independently
+on Windows and the one hosted failed-job replay passed. The first log only shows
+the modal still open; it does not establish whether input delivery or dismissal
+timing caused it. This is retained as an unresolved historical UI test flake,
+separate from the passing Rust-to-historical-controller compatibility gate.
 
 The earlier v0.7.3 evidence below remains historical; its real Windows Terminal
 window-close result does not qualify every new-view preference scenario.
