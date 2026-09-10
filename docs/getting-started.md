@@ -42,6 +42,12 @@ local HTTP address. Use `18000:8000 API` to choose another local port and a name
 Tab moves between fields. Adding through the form saves and connects; editing
 an active favorite restarts that mapping with the new values.
 
+Want selected favorites each time you open Ports? Select one, press **F2**,
+toggle **Open automatically** with Space, then press Enter. It starts disabled.
+Saving the preference leaves the current connection alone. A new view applies
+enabled favorites across listed machines; Stop keeps them off until you start
+them yourself or open another new view.
+
 ## Something did not work
 
 | Symptom | Next step |

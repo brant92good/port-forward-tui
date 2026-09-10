@@ -1,5 +1,20 @@
 # Native verification
 
+## Automatic opening candidate
+
+The v0.8.0 development candidate adds per-favorite opt-in preferences. Local
+Windows tests cover separate metadata/unchanged legacy schema, concurrent
+preference edits, malformed options, frozen destination/favorite checks and
+read-only CLI behavior. Actual ConPTY checks use isolated controllers and
+owned SSH-shaped loopback processes: new-view starts across two machines,
+concurrent views retaining running PIDs, manual Stop surviving refresh,
+new-view reapplication, Quit/Stop-all cancellation, retrying port reservations
+and foreground-only scope/cleanup. No personal forward or desktop window is
+used. Hosted release and public HTTPS qualification are still pending.
+
+The earlier v0.7.3 evidence below remains historical; its real Windows Terminal
+window-close result does not qualify every new-view preference scenario.
+
 Updated September 10, 2026. Native v0.7.3 binaries and installer checks are published. Results below
 describe their actual fixtures, not every developer's computer.
 

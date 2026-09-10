@@ -59,12 +59,20 @@ def main():
                 assert result['id'] == rule.id
                 assert result['forwards'][0]['name'] == 'Renamed API'
                 assert result['forwards'][0]['state'] == 'OFF'
+                # New-view preferences live outside the old forwards schema.
+                # Toggling and reading them must not start either controller's SSH.
+                before_options = (directory/'forwards.json').read_bytes()
+                native('auto-open', rule.id, '--on')
+                assert native('list')['forwards'][0]['open_automatically'] is True
+                assert exchange(directory, 'status')['states'].get(rule.id, 'OFF') == 'OFF'
+                assert (directory/'forwards.json').read_bytes() == before_options
                 # The old client must attach to the native controller and use its
                 # shared-favorites protocol without launching a second server.
                 client = DaemonClient(data['host'], directory)
                 assert client.shared_favorites and client.auto_reconnect
                 added = Forward.make(18888, 8888, 'Notebook')
                 client.upsert(added)
+                assert native('list')['forwards'][0]['open_automatically'] is True
                 assert any(row['id'] == added.id for row in native('list')['forwards'])
                 try:
                     client.upsert(rule, expected=rule)
@@ -73,6 +81,8 @@ def main():
                 else:
                     raise AssertionError('Old client overwrote a newer favorite')
                 native('delete', added.id, '--yes')
+                native('auto-open', rule.id, '--off')
+                assert native('list')['forwards'][0]['open_automatically'] is False
                 assert len(exchange(directory, 'status')['forwards']) == 1
                 assert exchange(directory, 'stop_all')['states'].get(rule.id, 'OFF') == 'OFF'
                 # The historical Windows byte lock and fs2 lock exclude each other.

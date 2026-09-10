@@ -129,6 +129,49 @@ fn real_cli_readonly_and_picker_contract() {
     );
     assert!(!one.directory.join("endpoint.json").exists());
     assert!(!two.directory.join("endpoint.json").exists());
+    let first = Store::load(&one.directory).unwrap().settings.forwards[0].clone();
+    let original = fs::read(one.directory.join("forwards.json")).unwrap();
+    let (code, result) = cli(
+        &absent,
+        &["--machine", &one.id, "auto-open", &first.id, "--on"],
+    );
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["open_automatically"], true);
+    for args in [&["list"][..], &["machines", "list"], &["doctor"]] {
+        let (code, result) = cli(&absent, args);
+        assert_eq!(code, 0, "{result}");
+        assert!(!one.directory.join("endpoint.json").exists());
+        assert!(!one.directory.join("daemon.lock").exists());
+        assert!(!two.directory.join("endpoint.json").exists());
+    }
+    let (code, result) = cli(&absent, &["--machine", &one.id, "list"]);
+    assert_eq!(code, 0);
+    assert_eq!(result["forwards"][0]["open_automatically"], true);
+    assert_eq!(result["forwards"][1]["open_automatically"], false);
+    assert_eq!(
+        fs::read(one.directory.join("forwards.json")).unwrap(),
+        original
+    );
+    let (code, _) = cli(&absent, &["--machine", &one.id, "auto-open", &first.id]);
+    assert_eq!(code, 2);
+    let (code, _) = cli(
+        &absent,
+        &[
+            "--machine",
+            &one.id,
+            "auto-open",
+            &first.id,
+            "--on",
+            "--off",
+        ],
+    );
+    assert_eq!(code, 2);
+    let (code, result) = cli(
+        &absent,
+        &["--machine", &one.id, "auto-open", &first.id, "--off"],
+    );
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["open_automatically"], false);
 }
 #[test]
 fn real_ipc_concurrent_edits_slow_clients_auth_and_broken_file_stop() {

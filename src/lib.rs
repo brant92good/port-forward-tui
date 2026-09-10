@@ -1,3 +1,4 @@
+pub mod auto_open;
 pub mod background;
 pub mod cli;
 pub mod forwarding;

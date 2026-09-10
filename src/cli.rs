@@ -1,5 +1,5 @@
 use crate::{
-    background,
+    auto_open, background,
     machines::{self, Catalog, Machine},
     store::{self, Forward, Store},
 };
@@ -52,6 +52,14 @@ pub enum Action {
     },
     Doctor,
     List,
+    /// Choose whether this favorite connects when a new Ports view opens.
+    AutoOpen {
+        id: String,
+        #[arg(long, required_unless_present = "off", conflicts_with = "off")]
+        on: bool,
+        #[arg(long, required_unless_present = "on")]
+        off: bool,
+    },
     RestartManager,
     StopAll,
     Save {
@@ -137,6 +145,7 @@ pub fn selected_machine(catalog: &Catalog, selector: Option<&str>) -> Result<Opt
     Ok(machines.into_iter().next())
 }
 pub fn listing(store: &Store) -> Result<Value> {
+    let preferences = auto_open::Preferences::load(&store.directory);
     let snapshot = if store.directory.join("endpoint.json").exists() {
         background::exchange(
             &store.directory,
@@ -159,6 +168,11 @@ pub fn listing(store: &Store) -> Result<Value> {
                 .clone(),
         );
     for rule in &mut rules {
+        rule["open_automatically"] = json!(
+            preferences
+                .as_ref()
+                .is_ok_and(|p| p.enabled(rule["id"].as_str().unwrap_or("")))
+        );
         rule["state"] = json!(
             snapshot
                 .as_ref()
@@ -169,10 +183,14 @@ pub fn listing(store: &Store) -> Result<Value> {
         );
         rule["url"] = json!(format!("http://127.0.0.1:{}", rule["local_port"]));
     }
-    Ok(
-        json!({"host":store.settings.host,"background":if snapshot.is_some(){"connected"}else{"not_connected"},
-        "warning":if snapshot.is_none()&&store.directory.join("endpoint.json").exists(){"Live status is unavailable. Existing connections might still be running."}else{""},"forwards":rules}),
-    )
+    let mut result = json!({"host":store.settings.host,"background":if snapshot.is_some(){"connected"}else{"not_connected"},
+        "warning":if snapshot.is_none()&&store.directory.join("endpoint.json").exists(){"Live status is unavailable. Existing connections might still be running."}else{""},"forwards":rules});
+    if let Err(error) = preferences {
+        result["automatic_opening_warning"] = json!(format!(
+            "Automatic opening disabled for this machine: {error:#}"
+        ));
+    }
+    Ok(result)
 }
 fn doctor(catalog: &Catalog) -> Value {
     let ssh = crate::process::ssh_executable();
@@ -190,6 +208,7 @@ pub fn execute(options: &Options) -> Result<Value> {
         Action::Machines { .. } => "machines",
         Action::Doctor => "doctor",
         Action::List => "list",
+        Action::AutoOpen { .. } => "auto-open",
         Action::RestartManager => "restart-manager",
         Action::StopAll => "stop-all",
         Action::Save { .. } => "save",
@@ -301,6 +320,9 @@ pub fn execute(options: &Options) -> Result<Value> {
                 let store = Store::load(&directory)?;
                 if matches!(action, Action::List) {
                     listing(&store)?
+                } else if let Action::AutoOpen { id, on, .. } = action {
+                    auto_open::set(&directory, id, *on)?;
+                    json!({"id":id,"open_automatically":on,"notice":"Saved. Applies when a new Ports view opens; current connections are unchanged."})
                 } else {
                     ensure!(
                         !store.settings.host.is_empty(),
@@ -453,5 +475,11 @@ pub fn print(result: &Value, as_json: bool) {
     }
     if let Some(id) = result["id"].as_str() {
         println!("Favorite ID: {id}");
+    }
+    if let Some(notice) = result["notice"].as_str() {
+        println!("{notice}");
+    }
+    if let Some(warning) = result["automatic_opening_warning"].as_str() {
+        println!("{warning}");
     }
 }

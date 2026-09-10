@@ -22,7 +22,13 @@ See docs/automation.md for schema version 1 and exit codes 0/1/2.
 - Keep saved schemas, IDs, per-device paths and protocol-1 compatibility.
 - Preserve concurrent edits through the controller; stale edits/deletes must fail.
 - A/quick entry save and connect. E saves; active edits restart the changed mapping.
-- OFF never starts itself. Stop, delete and stop-all cancel pending retries.
+- OFF stays off on refresh. Only a genuinely new TUI may apply a saved
+  `open_automatically` opt-in; absence means false. Stop, delete and stop-all
+  cancel pending retries; Stop/Q cancel unsent new-view work. Read-only commands,
+  metadata edits, and focusing an existing view never apply this preference.
+- Keep automatic-opening metadata in `forward-options.json`, outside the
+  protocol-1 `forwards.json` schema. Invalid options fail closed for that
+  machine without blocking manual Stop. Preserve unrelated option IDs.
 - Multiple background views share state; closing views does not stop forwards.
 - Foreground mode owns a single machine and ends its forwards when it closes.
 - S stops all listed machines; CLI stop-all requires a machine when ambiguous.

@@ -15,8 +15,8 @@ terminal closed.
 
 [Install](#install) · [First connection](#first-connection) · [Agent commands](#commands-for-your-agent) · [How it works](docs/reference.md)
 
-> v0.7.3 binaries are published. Builds and public install/update checks passed
-> on all five targets; macOS remains beta.
+> Development: opt-in automatic opening is being qualified for v0.8.0.
+> The install commands below use published v0.7.3; macOS remains beta.
 > [What was tested](docs/verification.md).
 
 ![Ports showing saved connections across servers](docs/screenshots/connections.svg)
@@ -86,18 +86,31 @@ directly in the main view.*
 | H | Add, import, or select machines |
 | Q | Close this view; background forwards continue |
 | S | Stop forwards and pending retries on all listed servers |
-| F2 | Windows return shortcut: this window or all windows |
+| F2 | Settings: open this favorite automatically, or choose return-shortcut scope |
 | ? | Full keyboard guide |
 
 The selected row determines which machine receives a new forward. Each view
 keeps its own selection, while favorites and connection state stay shared.
 Conflicting edits are rejected so one view cannot silently overwrite another.
 
+To bring up the same dev environment each day, select a favorite, press **F2**,
+enable **Open automatically** with Space, and press Enter to save. It is off by
+default. A new Ports view opens opted-in favorites across its listed machines;
+running connections keep their existing processes. `--foreground` applies only
+to its selected machine.
+
+After opening completes, Stop keeps a connection off through refresh. Opening
+a new view applies the preference again. **QUEUED** means it has not started yet:
+Enter cancels that item, **S** cancels this view's remaining queue and stops
+listed forwards, and **Q** cancels its unsent items before closing. Changing this setting
+does not immediately start or stop anything.
+
 ## When your connection drops
 
 Started forwards retry recoverable failures after **2, 4, 8, 16, then at most
 30 seconds**. Stop a row to cancel its retries. Authentication, host-key, and
-occupied-port errors need attention; saved OFF favorites stay OFF.
+occupied-port errors need attention. OFF favorites stay OFF unless you start
+them or open a new view with **Open automatically** enabled for them.
 
 Closing the terminal leaves the background controller running. Rebooting or
 signing out ends it. **ON** confirms that SSH owns the local listener; the remote
@@ -110,10 +123,12 @@ ports doctor --json
 ports machines list --json
 ports save --machine MACHINE_ID --remote 8000 --name API --json
 ports start FAVORITE_ID --machine MACHINE_ID --json
+ports auto-open FAVORITE_ID --machine MACHINE_ID --on --json
 ```
 
 Use IDs returned by the previous command. `save` records a favorite; `start`
-opens it. JSON results distinguish ON, CONNECTING, RETRYING, ERROR, and unobserved
+opens it. `auto-open --on` saves the new-view preference; `--off` disables it.
+Neither changes the current connection state. JSON results distinguish ON, CONNECTING, RETRYING, ERROR, and unobserved
 status. [CLI contract](docs/automation.md) · [Agent instructions](AGENTS.md).
 
 ## Evidence, scope, and contributing

@@ -7,6 +7,7 @@ metadata, tunnel intent, process ownership and screen state in separate modules.
 | --- | --- |
 | `src/store.rs`, `machines.rs` | Validated favorites, stable machine IDs, atomic writes, static SSH alias import |
 | `src/forwarding.rs` | ON/OFF intent, retry timing, cancellation and permanent error classification |
+| `src/auto_open.rs` | Opt-in new-view preferences and frozen automatic-start requests |
 | `src/process/` | Owned SSH process groups/jobs and OS listener ownership |
 | `src/background.rs` | Per-machine detached controller, protocol-1 IPC and serialized edits |
 | `src/cli.rs` | Commands and versioned JSON results |
@@ -37,6 +38,20 @@ Default data folders follow the OS's local application-data location:
 remains a machine. Additional machines have their own folders under `machines/`.
 Custom SSH config paths are local filesystem references, passed to OpenSSH
 with `-F`. Never publish endpoint tokens, keys or personal connection metadata.
+
+Each machine's optional `forward-options.json` uses
+`{"version":1,"open_automatically":["FAVORITE_ID"]}`. Missing means every
+favorite is disabled. A separate short-lived lock protects atomic preference
+merges; old controllers continue reading the unchanged `forwards.json` schema.
+Deleted IDs are inert. Malformed or unsupported options disable automatic work
+for that machine and display a warning, while manual controls remain available.
+
+A new TUI captures opted-in favorites and their machine destination settings.
+It processes one automatic request at a time, prioritizes manual actions and
+rechecks for changed/deleted preferences, favorites and destinations before
+dispatch. Starts use the existing requested-port conflict checks and idempotent
+protocol-1 command. Q/Stop cancel this view's unsent work; at most the current bounded
+request finishes before a queued stop. No refresh rebuilds this launch queue.
 
 ## Windows integration
 

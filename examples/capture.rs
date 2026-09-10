@@ -89,6 +89,7 @@ fn main() -> Result<()> {
             rule: Some(Forward::new(l, r, n)?),
             state: state.into(),
             details: String::new(),
+            open_automatically: false,
         })
     })
     .collect::<Result<Vec<_>>>()?;
@@ -105,6 +106,8 @@ fn main() -> Result<()> {
                 notice: "",
                 busy: false,
                 persistent: true,
+                automatic: &Default::default(),
+                automatic_errors: &Default::default(),
             },
         )
     })?;
@@ -125,6 +128,8 @@ fn main() -> Result<()> {
                 notice: "",
                 busy: false,
                 persistent: true,
+                automatic: &Default::default(),
+                automatic_errors: &Default::default(),
             },
         )
     })?;
