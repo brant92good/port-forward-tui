@@ -84,6 +84,35 @@ pub fn set(directory: &Path, id: &str, enabled: bool) -> Result<()> {
     store::write_json(&directory.join(FILE), &preferences)
 }
 
+/// Edit-form compare-and-merge. The expected forward is the NEW saved value
+/// after a combined edit; the option snapshot still comes from opening the form.
+pub fn set_checked(directory: &Path, expected: &Forward, old: bool, enabled: bool) -> Result<()> {
+    let _lock = Lock::acquire(directory, "forward-options.lock", Duration::from_secs(2))?;
+    let current = Store::load(directory)?;
+    ensure!(
+        current
+            .settings
+            .forwards
+            .iter()
+            .any(|rule| rule == expected),
+        "This favorite changed in another view. Reopen Edit and try again."
+    );
+    let mut preferences = Preferences::load(directory)?;
+    ensure!(
+        preferences.enabled(&expected.id) == old,
+        "Automatic opening changed in another view. Reopen Edit and try again."
+    );
+    if old == enabled {
+        return Ok(());
+    }
+    if enabled {
+        preferences.open_automatically.insert(expected.id.clone());
+    } else {
+        preferences.open_automatically.remove(&expected.id);
+    }
+    store::write_json(&directory.join(FILE), &preferences)
+}
+
 #[derive(Debug, Clone)]
 pub struct Pending {
     pub machine: Machine,

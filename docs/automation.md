@@ -44,6 +44,10 @@ view, CLI commands and focusing an already-open view never apply them. Stop
 leaves the preference enabled for the next new view. The TUI-only QUEUED label
 is pending launch work, not a new controller/JSON state.
 
+The TUI's **T** title preview and **U** display choice have no CLI equivalent.
+They never change the saved `name` returned in JSON. Agents should use explicit
+saved names; opening or listing Ports does not probe web pages.
+
 ## Results and exit codes
 
 JSON includes `schema_version: 1` and `ok`. Exit codes are **0** for successful

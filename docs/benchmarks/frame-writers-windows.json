@@ -1,0 +1,599 @@
+{
+  "binary_sha256": [
+    "4c42396788f48b6c3a5d21e6f0463fe0fe3ca6afd5a736dee3cc71df67a67910",
+    "4c42396788f48b6c3a5d21e6f0463fe0fe3ca6afd5a736dee3cc71df67a67910"
+  ],
+  "kind": "hidden-pty-byte-arrival",
+  "physical_paint_measured": false,
+  "same_layout_writer_comparison": true,
+  "samples": [
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 221.8451,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 3967
+        }
+      },
+      "received_bytes": 4817,
+      "received_chunks": 18,
+      "round": 0,
+      "rows": 32,
+      "spawn_to_full_ms": 231.2721,
+      "spawn_to_title_ms": 29.4367,
+      "title_to_full_ms": 201.8354,
+      "variant": 0,
+      "warmup": true
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 1.6508,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 2
+        }
+      },
+      "received_bytes": 4695,
+      "received_chunks": 5,
+      "round": 0,
+      "rows": 32,
+      "spawn_to_full_ms": 25.8,
+      "spawn_to_title_ms": 25.8,
+      "title_to_full_ms": 0.0,
+      "variant": 1,
+      "warmup": true
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 2.4021,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 2
+        }
+      },
+      "received_bytes": 4695,
+      "received_chunks": 5,
+      "round": 1,
+      "rows": 32,
+      "spawn_to_full_ms": 35.5593,
+      "spawn_to_title_ms": 35.5593,
+      "title_to_full_ms": 0.0,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 177.8026,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 3967
+        }
+      },
+      "received_bytes": 4910,
+      "received_chunks": 16,
+      "round": 1,
+      "rows": 32,
+      "spawn_to_full_ms": 195.20950000000002,
+      "spawn_to_title_ms": 25.1055,
+      "title_to_full_ms": 170.104,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 217.2718,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 3967
+        }
+      },
+      "received_bytes": 4966,
+      "received_chunks": 17,
+      "round": 2,
+      "rows": 32,
+      "spawn_to_full_ms": 219.5086,
+      "spawn_to_title_ms": 35.2683,
+      "title_to_full_ms": 184.2403,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 1.9023,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 2
+        }
+      },
+      "received_bytes": 4695,
+      "received_chunks": 5,
+      "round": 2,
+      "rows": 32,
+      "spawn_to_full_ms": 37.6916,
+      "spawn_to_title_ms": 37.6916,
+      "title_to_full_ms": 0.0,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 1.7004,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 2
+        }
+      },
+      "received_bytes": 4695,
+      "received_chunks": 5,
+      "round": 3,
+      "rows": 32,
+      "spawn_to_full_ms": 36.899800000000006,
+      "spawn_to_title_ms": 36.899800000000006,
+      "title_to_full_ms": 0.0,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 176.0218,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 3967
+        }
+      },
+      "received_bytes": 4802,
+      "received_chunks": 16,
+      "round": 3,
+      "rows": 32,
+      "spawn_to_full_ms": 193.9174,
+      "spawn_to_title_ms": 39.4743,
+      "title_to_full_ms": 154.4431,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 219.9905,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 3967
+        }
+      },
+      "received_bytes": 4883,
+      "received_chunks": 17,
+      "round": 4,
+      "rows": 32,
+      "spawn_to_full_ms": 216.2269,
+      "spawn_to_title_ms": 30.8248,
+      "title_to_full_ms": 185.4021,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 2.6025,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 2
+        }
+      },
+      "received_bytes": 4695,
+      "received_chunks": 5,
+      "round": 4,
+      "rows": 32,
+      "spawn_to_full_ms": 36.1693,
+      "spawn_to_title_ms": 36.1693,
+      "title_to_full_ms": 0.0,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 2.7062000000000004,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 2
+        }
+      },
+      "received_bytes": 4695,
+      "received_chunks": 5,
+      "round": 5,
+      "rows": 32,
+      "spawn_to_full_ms": 21.5855,
+      "spawn_to_title_ms": 21.5855,
+      "title_to_full_ms": 0.0,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 196.4943,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 3967
+        }
+      },
+      "received_bytes": 4937,
+      "received_chunks": 16,
+      "round": 5,
+      "rows": 32,
+      "spawn_to_full_ms": 208.7269,
+      "spawn_to_title_ms": 38.0389,
+      "title_to_full_ms": 170.68800000000002,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 231.0841,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 3967
+        }
+      },
+      "received_bytes": 4865,
+      "received_chunks": 18,
+      "round": 6,
+      "rows": 32,
+      "spawn_to_full_ms": 229.9191,
+      "spawn_to_title_ms": 29.0534,
+      "title_to_full_ms": 200.8657,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 120,
+      "frame_writer": {
+        "draw_ms": 1.9175,
+        "frame_sha256": "c2064c4d13497147996df074d21780229094569c0cf2765cc6ff208f3f0fe3a0",
+        "writer": {
+          "bytes": 5489,
+          "flushes": 2,
+          "writes": 2
+        }
+      },
+      "received_bytes": 4695,
+      "received_chunks": 5,
+      "round": 6,
+      "rows": 32,
+      "spawn_to_full_ms": 36.2525,
+      "spawn_to_title_ms": 36.2525,
+      "title_to_full_ms": 0.0,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 710.5555,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 14848
+        }
+      },
+      "received_bytes": 13619,
+      "received_chunks": 49,
+      "round": 0,
+      "rows": 65,
+      "spawn_to_full_ms": 716.533,
+      "spawn_to_title_ms": 35.016400000000004,
+      "title_to_full_ms": 681.5166,
+      "variant": 0,
+      "warmup": true
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 4.2616,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 5
+        }
+      },
+      "received_bytes": 15707,
+      "received_chunks": 6,
+      "round": 0,
+      "rows": 65,
+      "spawn_to_full_ms": 28.435,
+      "spawn_to_title_ms": 28.4236,
+      "title_to_full_ms": 0.011399999999999999,
+      "variant": 1,
+      "warmup": true
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 6.7524999999999995,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 5
+        }
+      },
+      "received_bytes": 15707,
+      "received_chunks": 6,
+      "round": 1,
+      "rows": 65,
+      "spawn_to_full_ms": 38.2426,
+      "spawn_to_title_ms": 38.228699999999996,
+      "title_to_full_ms": 0.013900000000000001,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 689.4041,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 14848
+        }
+      },
+      "received_bytes": 14270,
+      "received_chunks": 48,
+      "round": 1,
+      "rows": 65,
+      "spawn_to_full_ms": 695.1777999999999,
+      "spawn_to_title_ms": 25.2368,
+      "title_to_full_ms": 669.941,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 813.9973,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 14848
+        }
+      },
+      "received_bytes": 13985,
+      "received_chunks": 54,
+      "round": 2,
+      "rows": 65,
+      "spawn_to_full_ms": 798.5677,
+      "spawn_to_title_ms": 38.5229,
+      "title_to_full_ms": 760.0448,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 5.801200000000001,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 5
+        }
+      },
+      "received_bytes": 15707,
+      "received_chunks": 6,
+      "round": 2,
+      "rows": 65,
+      "spawn_to_full_ms": 30.0683,
+      "spawn_to_title_ms": 30.0423,
+      "title_to_full_ms": 0.026,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 4.3865,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 5
+        }
+      },
+      "received_bytes": 15707,
+      "received_chunks": 6,
+      "round": 3,
+      "rows": 65,
+      "spawn_to_full_ms": 30.3232,
+      "spawn_to_title_ms": 30.3008,
+      "title_to_full_ms": 0.0224,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 783.3157,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 14848
+        }
+      },
+      "received_bytes": 13764,
+      "received_chunks": 53,
+      "round": 3,
+      "rows": 65,
+      "spawn_to_full_ms": 779.568,
+      "spawn_to_title_ms": 37.7436,
+      "title_to_full_ms": 741.8244000000001,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 769.8399999999999,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 14848
+        }
+      },
+      "received_bytes": 13810,
+      "received_chunks": 53,
+      "round": 4,
+      "rows": 65,
+      "spawn_to_full_ms": 776.1717,
+      "spawn_to_title_ms": 30.5087,
+      "title_to_full_ms": 745.663,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 4.367,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 5
+        }
+      },
+      "received_bytes": 15707,
+      "received_chunks": 6,
+      "round": 4,
+      "rows": 65,
+      "spawn_to_full_ms": 26.843,
+      "spawn_to_title_ms": 26.8137,
+      "title_to_full_ms": 0.0293,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 14.3661,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 5
+        }
+      },
+      "received_bytes": 16237,
+      "received_chunks": 7,
+      "round": 5,
+      "rows": 65,
+      "spawn_to_full_ms": 44.799899999999994,
+      "spawn_to_title_ms": 44.7779,
+      "title_to_full_ms": 0.022,
+      "variant": 1,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 851.9607,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 14848
+        }
+      },
+      "received_bytes": 14269,
+      "received_chunks": 57,
+      "round": 5,
+      "rows": 65,
+      "spawn_to_full_ms": 842.2918999999999,
+      "spawn_to_title_ms": 33.8894,
+      "title_to_full_ms": 808.4025,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 783.0719,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 14848
+        }
+      },
+      "received_bytes": 13378,
+      "received_chunks": 52,
+      "round": 6,
+      "rows": 65,
+      "spawn_to_full_ms": 775.6273,
+      "spawn_to_title_ms": 40.137899999999995,
+      "title_to_full_ms": 735.4893999999999,
+      "variant": 0,
+      "warmup": false
+    },
+    {
+      "columns": 220,
+      "frame_writer": {
+        "draw_ms": 6.6226,
+        "frame_sha256": "f49bee5b589cee12cb4829d97c93f7d26cbe94b2fb52581bea1feae3ca714687",
+        "writer": {
+          "bytes": 17996,
+          "flushes": 2,
+          "writes": 5
+        }
+      },
+      "received_bytes": 15707,
+      "received_chunks": 6,
+      "round": 6,
+      "rows": 65,
+      "spawn_to_full_ms": 37.8313,
+      "spawn_to_title_ms": 37.8074,
+      "title_to_full_ms": 0.0239,
+      "variant": 1,
+      "warmup": false
+    }
+  ]
+}

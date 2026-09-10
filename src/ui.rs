@@ -1,6 +1,7 @@
 use crate::{
     auto_open::{self, Pending, Preferences},
     background::{self, Supervisor},
+    forward_form,
     machines::{Catalog, Machine},
     process::NativeBackend,
     screen::{self, ACCENT, Input, MUTED},
@@ -11,8 +12,8 @@ use anyhow::{Context, Result};
 use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::{Constraint, Layout},
-    style::{Color, Style},
-    widgets::{Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
+    style::Style,
+    widgets::{Clear, Paragraph, Wrap},
 };
 use serde_json::{Value, json};
 use std::{
@@ -388,6 +389,13 @@ pub struct Presentation<'a> {
     pub automatic_errors: &'a BTreeMap<(PathBuf, String), String>,
 }
 pub fn render(frame: &mut ratatui::Frame, view: &Presentation<'_>) {
+    render_named(frame, view, None);
+}
+fn render_named(
+    frame: &mut ratatui::Frame,
+    view: &Presentation<'_>,
+    names: Option<&crate::service_name::Inspector>,
+) {
     let Presentation {
         rows,
         selected,
@@ -431,69 +439,7 @@ pub fn render(frame: &mut ratatui::Frame, view: &Presentation<'_>) {
         ),
         areas[1],
     );
-    let table = rows.iter().map(|entry| {
-        let state = if !requested(&entry.state)
-            && entry.rule.as_ref().is_some_and(|rule| {
-                automatic
-                    .iter()
-                    .any(|pending| pending.matches(&entry.machine, rule))
-            }) {
-            "QUEUED"
-        } else {
-            &entry.state
-        };
-        let color = match state {
-            "ON" => Color::Green,
-            "CONNECTING" | "RETRYING" | "QUEUED" => Color::Yellow,
-            "ERROR" => Color::Red,
-            _ => MUTED,
-        };
-        let (name, local, remote) = entry
-            .rule
-            .as_ref()
-            .map(|r| {
-                (
-                    r.name.clone(),
-                    r.local_port.to_string(),
-                    r.remote_port.to_string(),
-                )
-            })
-            .unwrap_or((
-                "No favorites — press A".into(),
-                String::new(),
-                String::new(),
-            ));
-        Row::new([
-            Cell::from(entry.machine.name.clone()).style(Style::default().fg(ACCENT)),
-            Cell::from(state.to_owned()).style(Style::default().fg(color)),
-            Cell::from(name),
-            Cell::from(local),
-            Cell::from("→"),
-            Cell::from(remote),
-        ])
-    });
-    frame.render_stateful_widget(
-        Table::new(
-            table,
-            [
-                Constraint::Percentage(25),
-                Constraint::Length(11),
-                Constraint::Min(12),
-                Constraint::Length(7),
-                Constraint::Length(2),
-                Constraint::Length(7),
-            ],
-        )
-        .header(
-            Row::new(["SERVER", "STATE", "FAVORITE", "LOCAL", "", "REMOTE"])
-                .style(Style::default().fg(MUTED)),
-        )
-        .block(screen::panel(" Saved connections "))
-        .row_highlight_style(Style::default().bg(Color::Rgb(37, 49, 67)))
-        .highlight_symbol("› "),
-        areas[2],
-        &mut TableState::default().with_selected(Some(selected)),
-    );
+    crate::connection_list::render_named(frame, areas[2], rows, selected, automatic, names);
     let detail=rows.get(selected).map(|entry|if entry.details.is_empty(){entry.rule.as_ref().map(|r|format!("{} · http://127.0.0.1:{} → {}:{}\nON confirms the local SSH listener. The app on the server must also be running.",r.name,r.local_port,entry.machine.target,r.remote_port)).unwrap_or_else(||"Press A to add a favorite for this machine.".into())}else{entry.details.clone()}).unwrap_or_default();
     let detail = format!(
         "{detail}\nOpen automatically: {} (F2 settings)",
@@ -527,7 +473,7 @@ pub fn render(frame: &mut ratatui::Frame, view: &Presentation<'_>) {
             automatic_errors.len()
         )
     };
-    frame.render_widget(Paragraph::new(format!("Enter on/off · N quick · A add · E edit · D delete · B browser · H machines · F2 settings · ? help · Q close\n{automatic_summary}{}{}",if busy{"Working… "}else{""},notice)).wrap(Wrap{trim:false}).style(Style::default().fg(ACCENT)),areas[4]);
+    frame.render_widget(Paragraph::new(format!("Enter on/off · N quick · A add · E edit · D delete · B URL · T title · H machines · F2 settings · ? help · Q close\n{automatic_summary}{}{}",if busy{"Working… "}else{""},notice)).wrap(Wrap{trim:false}).style(Style::default().fg(ACCENT)),areas[4]);
 }
 fn open_browser(port: u16) -> Result<()> {
     let url = format!("http://127.0.0.1:{port}");
@@ -689,6 +635,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     let mut closing = false;
     let mut next_poll = Instant::now();
     let mut generation = 0_u64;
+    let mut names = crate::service_name::Inspector::default();
     loop {
         if !closing
             && !changing
@@ -831,6 +778,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                 next_poll = Instant::now() + Duration::from_millis(250);
             }
         }
+        names.poll(&rows);
         if closing && !changing && pending.is_empty() {
             break;
         }
@@ -848,7 +796,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
             registered_machine = entry.machine.id.clone();
         }
         session.terminal.draw(|frame| {
-            render(
+            render_named(
                 frame,
                 &Presentation {
                     rows: &rows,
@@ -861,7 +809,9 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     automatic: &automatic,
                     automatic_errors: &automatic_errors,
                 },
-            )
+                Some(&names),
+            );
+            names.draw(frame);
         })?;
         let event = screen::key()?;
         if matches!(event, Some(Event::Key(_) | Event::FocusGained))
@@ -882,11 +832,15 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
             continue;
         };
         if screen::quit(key) {
+            names.close();
             automatic.clear();
             closing = true;
             continue;
         }
         if closing {
+            continue;
+        }
+        if names.key(key) {
             continue;
         }
         let entry = rows.get(selected).cloned();
@@ -1015,6 +969,13 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
             _ if (!pending.is_empty() || changing) && key.code != KeyCode::Char('s') => {
                 notice = "Wait for the current change to finish.".into()
             }
+            KeyCode::Char('t') => {
+                if let Some(entry) = &entry
+                    && let Err(error) = names.open(entry, persistent)
+                {
+                    notice = format!("{error:#}");
+                }
+            }
             KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('r') => {
                 if let Some(entry) = &entry
                     && let Some(rule) = &entry.rule
@@ -1033,57 +994,56 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     });
                 }
             }
-            KeyCode::Char('a' | 'e') => {
-                if let Some(entry) = &entry {
-                    let previous = if key.code == KeyCode::Char('e') {
-                        entry.rule.clone()
-                    } else {
-                        None
-                    };
-                    if key.code == KeyCode::Char('e') && previous.is_none() {
-                        continue;
+            KeyCode::Char('e') => {
+                if let Some(entry) = &entry
+                    && let Some(previous) = &entry.rule
+                {
+                    names.reset(entry);
+                    let directory = entry.machine.directory.clone();
+                    let model = forward_form::Model::new(&directory, previous.clone());
+                    let result = forward_form::edit(
+                        &mut session.terminal,
+                        &entry.machine.name,
+                        model,
+                        |request| {
+                            forward_form::save(&directory, request, |rule, expected| {
+                                let args = json!({"rule":rule,"expected":expected,"start":false});
+                                if let Some(local) = &mut local {
+                                    local.local("upsert", args)
+                                } else {
+                                    perform(
+                                        &catalog,
+                                        &Operation {
+                                            directory: directory.clone(),
+                                            command: "upsert",
+                                            args,
+                                            automatic: None,
+                                        },
+                                    )
+                                }
+                            })
+                        },
+                    )?;
+                    if let Some(message) = result {
+                        notice = message;
+                        generation = generation.wrapping_add(1);
+                        next_poll = Instant::now();
                     }
+                }
+            }
+            KeyCode::Char('a') => {
+                if let Some(entry) = &entry {
                     let fields = [
-                        (
-                            "App port on server",
-                            previous
-                                .as_ref()
-                                .map(|r| r.remote_port.to_string())
-                                .unwrap_or_default(),
-                        ),
-                        (
-                            "Port on this computer (blank uses same)",
-                            previous
-                                .as_ref()
-                                .map(|r| r.local_port.to_string())
-                                .unwrap_or_default(),
-                        ),
-                        (
-                            "Name (optional)",
-                            previous
-                                .as_ref()
-                                .map(|r| r.name.clone())
-                                .unwrap_or_default(),
-                        ),
+                        ("App port on server", String::new()),
+                        ("Port on this computer (blank uses same)", String::new()),
+                        ("Name (optional)", String::new()),
                     ];
                     if let Some(values) = screen::form(
                         &mut session.terminal,
-                        if previous.is_some() {
-                            " Edit favorite "
-                        } else {
-                            " Add favorite "
-                        },
+                        " Add favorite ",
                         &fields,
-                        usize::from(previous.is_some()),
-                        &format!(
-                            "Server: {} · {}",
-                            entry.machine.name,
-                            if previous.is_some() {
-                                "Save changes"
-                            } else {
-                                "Save and connect"
-                            }
-                        ),
+                        0,
+                        &format!("Server: {} · Save and connect", entry.machine.name),
                     )? {
                         let result = (|| -> Result<Forward> {
                             let remote = store::port(values[0].trim())?;
@@ -1092,21 +1052,15 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                             } else {
                                 store::port(values[1].trim())?
                             };
-                            let mut rule = Forward::new(local, remote, &values[2])?;
-                            if let Some(previous) = &previous {
-                                rule.id = previous.id.clone();
-                            }
-                            Ok(rule)
+                            Forward::new(local, remote, &values[2])
                         })();
                         match result {
-                            Ok(rule) => {
-                                pending.push_back(Operation {
-                                    directory: entry.machine.directory.clone(),
-                                    command: "upsert",
-                                    args: json!({"rule":rule,"expected":previous,"start":previous.is_none()}),
-                                    automatic: None,
-                                })
-                            }
+                            Ok(rule) => pending.push_back(Operation {
+                                directory: entry.machine.directory.clone(),
+                                command: "upsert",
+                                args: json!({"rule":rule,"expected":null,"start":true}),
+                                automatic: None,
+                            }),
                             Err(error) => notice = error.to_string(),
                         }
                     }
@@ -1169,4 +1123,4 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     }
     Ok(())
 }
-const HELP: &str = "Quick entry: type 8000 then Enter, or 18000:8000 API. The first number is local; the second is the server's app port. A opens the full form.\n\n↑/↓ select · Enter/Space start or stop · N quick entry\nA add favorite · E edit · D delete · B open local URL\nR reconnect · S stop all listed servers · H manage machines\nF2 settings / open automatically · Q / Ctrl+Q close view\n\nFavorites start OFF unless Open automatically is enabled in F2 Settings. A new view applies that preference once; refresh never does. Enter cancels a QUEUED item; Q and S cancel unsent opening work. Stop keeps the preference for the next new view. Started forwards retry network failures after 2 seconds, increasing to at most 30 seconds. Enter stops pending retries. Authentication, host-key and occupied-port errors need attention.\n\nBackground is on by default. Closing a tab or the entire terminal leaves the controller running. Signing out or rebooting ends it. --foreground stops the view's connections when it closes.\n\nFor first-time host trust or login problems, run ssh YOUR_ALIAS in a shell. Encrypted keys need ssh-agent. ON confirms an owned local listener, not the health of the remote app.";
+const HELP: &str = "Quick entry: type 8000 then Enter, or 18000:8000 API. The first number is local; the second is the server's app port. A opens the full form.\n\n↑/↓ select · Enter/Space start or stop · N quick entry\nA add favorite · E edit · D delete · B open local URL · T check web app name\nR reconnect · S stop all listed servers · H manage machines\nF2 settings / open automatically · Q / Ctrl+Q close view\n\nFavorites start OFF unless Open automatically is enabled in F2 Settings. A new view applies that preference once; refresh never does. Enter cancels a QUEUED item; Q and S cancel unsent opening work. Stop keeps the preference for the next new view. Started forwards retry network failures after 2 seconds, increasing to at most 30 seconds. Enter stops pending retries. Authentication, host-key and occupied-port errors need attention.\n\nBackground is on by default. Closing a tab or the entire terminal leaves the controller running. Signing out or rebooting ends it. --foreground stops the view's connections when it closes.\n\nT reads one HTML page from the selected ON local forward. Enter keeps the saved name; U uses its title in this view only. E restores the saved name. No title is saved and no forward is changed.\n\nFor first-time host trust or login problems, run ssh YOUR_ALIAS in a shell. Encrypted keys need ssh-agent. ON confirms an owned local listener, not the health of the remote app.";

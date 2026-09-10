@@ -103,10 +103,28 @@ impl Session {
         let deadline = Instant::now() + Duration::from_secs(12);
         loop {
             self.pump();
-            if self.screen.screen().contents().lines().any(|line| {
-                let words = line.split_whitespace().collect::<Vec<_>>();
-                words.contains(&name) && words.contains(&state)
-            }) {
+            let content = self.screen.screen().contents();
+            let lines: Vec<_> = content.lines().collect();
+            let named = |line: &str| {
+                line.split_once('·')
+                    .is_some_and(|(heading, _)| heading.trim_matches(['│', ' ']) == name)
+            };
+            let has_state = |line: &str| line.split_whitespace().any(|word| word == state);
+            // Server headings are separate from Name-first forwarding rows.
+            // Small views may have room for only the selected row; in that case
+            // require its machine in the top context header, never arbitrary text.
+            let selected_context = lines.iter().any(|line| {
+                named(line) && (line.contains("Background on") || line.contains("Foreground ·"))
+            }) && lines
+                .iter()
+                .any(|line| line.contains('›') && has_state(line));
+            let grouped_context = lines.windows(2).any(|pair| {
+                named(pair[0])
+                    && !pair[0].contains("Background on")
+                    && !pair[0].contains("Foreground ·")
+                    && has_state(pair[1])
+            });
+            if selected_context || grouped_context {
                 return;
             }
             assert!(
@@ -349,6 +367,9 @@ fn keyboard_form_multihost_concurrent_view_and_detach() {
             .iter()
             .any(|rule| rule.id == saved.id && rule.name == "Renamed API")
     });
+    // Group headings consume rows: select the saved final row before asserting
+    // its visible text rather than assuming the entire list fits this viewport.
+    first.send("\x1b[F");
     first.expect("Renamed API");
     first.send("\x1b[Hn18009:9010 Collision\r");
     first.expect("already requested");
@@ -390,6 +411,8 @@ fn keyboard_form_multihost_concurrent_view_and_detach() {
         })
     });
     let mut second = Session::start(temp.path(), &machine.id);
+    second.expect("Saved connections");
+    second.send("\x1b[F");
     second.expect("Renamed API");
     first.close();
     let snapshot = background::exchange(
@@ -697,6 +720,10 @@ fn automatic_queue_quit_and_stop_all_cancel_unsent_work() {
     second.send("s");
     second.expect("every listed server");
     second.send("y");
+    // An old OFF snapshot can arrive before an in-flight automatic start and
+    // the queued Stop-all complete. This fresh view has no earlier manual
+    // operation, so its Updated notice is the Stop-all completion boundary.
+    second.expect("Updated");
     second.wait_for(|| {
         background::exchange(
             &machine.directory,
@@ -830,6 +857,136 @@ fn owned_fixture_cleanup_after_forced_foreground_app_exit() {
     drop(view);
     drop(cleanup);
     assert!(pids.into_iter().all(|pid| !fixture_running(pid)));
+}
+
+#[test]
+fn edit_checkbox_on_off_cancel_and_f2_share_metadata_without_starting_controller() {
+    let temp = tempfile::tempdir().unwrap();
+    let catalog = Catalog::new(temp.path()).unwrap();
+    let first = fixture_machine(&catalog, "EditFirst", 1);
+    let second = fixture_machine(&catalog, "EditSecond", 1);
+    let one = Store::load(&first.directory).unwrap().settings.forwards[0].clone();
+    let before = std::fs::read(first.directory.join("forwards.json")).unwrap();
+    let other = std::fs::read(second.directory.join("forwards.json")).unwrap();
+    let mut view = Session::start(temp.path(), &first.id);
+    view.expect("Saved connections");
+    view._pair
+        .master
+        .resize(PtySize {
+            rows: 18,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    view.screen.screen_mut().set_size(18, 80);
+    view.send("e");
+    view.expect("[ ] Open automatically");
+    view.send("\t\t \r");
+    view.wait_for(|| {
+        auto_open::Preferences::load(&first.directory)
+            .unwrap()
+            .enabled(&one.id)
+    });
+    // The compact viewport hides the ordinary details panel. The save notice
+    // is stable here: neither machine had any automatic work in this view.
+    view.expect("Favorite saved. Automatic opening applies");
+    assert_eq!(
+        std::fs::read(first.directory.join("forwards.json")).unwrap(),
+        before
+    );
+    assert_eq!(
+        std::fs::read(second.directory.join("forwards.json")).unwrap(),
+        other
+    );
+    assert!(!first.directory.join("endpoint.json").exists());
+    assert!(!second.directory.join("endpoint.json").exists());
+    view.send("\x1bOQ"); // F2 still reads the same option.
+    view.expect("[x] Open automatically");
+    view.send(" \r");
+    view.wait_for(|| {
+        !auto_open::Preferences::load(&first.directory)
+            .unwrap()
+            .enabled(&one.id)
+    });
+    view.send("e");
+    view.expect("[ ] Open automatically");
+    view.send("\t\t \x1b");
+    view.expect("Saved connections");
+    assert!(
+        !auto_open::Preferences::load(&first.directory)
+            .unwrap()
+            .enabled(&one.id)
+    );
+    view.close();
+    let mut reopened = Session::start(temp.path(), &first.id);
+    reopened.expect("Saved connections");
+    assert!(!first.directory.join("endpoint.json").exists());
+    assert!(!second.directory.join("endpoint.json").exists());
+    std::fs::write(first.directory.join(auto_open::FILE), "broken").unwrap();
+    reopened.send("e");
+    reopened.expect("[unavailable] Open automatically");
+    reopened.send("\r");
+    reopened.expect("Automatic opening is unavailable");
+    reopened.expect("Edit favorite");
+    assert_eq!(
+        std::fs::read_to_string(first.directory.join(auto_open::FILE)).unwrap(),
+        "broken"
+    );
+    reopened.send("\x1b");
+    reopened.close();
+}
+
+#[test]
+fn edit_checkbox_preserves_running_pid_and_stale_error_keeps_input_in_dialog() {
+    let temp = tempfile::tempdir().unwrap();
+    let ssh = fixture_ssh(temp.path());
+    let catalog = Catalog::new(temp.path()).unwrap();
+    let machine = fixture_machine(&catalog, "EditRunning", 1);
+    let _fixture_stop = FixtureStop::new(temp.path(), &[&machine]);
+    let _controller = Cleanup::with_ssh(&machine.directory, Some(&ssh));
+    let rule = Store::load(&machine.directory).unwrap().settings.forwards[0].clone();
+    background::call(&machine.directory, "start", json!({"rule_id":rule.id})).unwrap();
+    let mut view = Session::start(temp.path(), &machine.id);
+    view.expect_row("EditRunning", "ON");
+    let pid = tunnel_pid(&machine);
+    view.send("e");
+    view.expect("[ ] Open automatically");
+    view.send("\t\t \r");
+    view.wait_for(|| {
+        auto_open::Preferences::load(&machine.directory)
+            .unwrap()
+            .enabled(&rule.id)
+    });
+    view.expect("Open automatically: on");
+    assert_eq!(tunnel_pid(&machine), pid);
+    view.close();
+    let mut view = Session::start(temp.path(), &machine.id);
+    view.expect("already requested");
+    assert_eq!(tunnel_pid(&machine), pid);
+    view.send("e");
+    view.expect("[x] Open automatically");
+    // Name input is retained when another tab changes the option during Edit.
+    view.send("\tMy retained name");
+    auto_open::set(&machine.directory, &rule.id, false).unwrap();
+    view.send("\r");
+    view.expect("Automatic opening changed in another view");
+    view.expect("Edit favorite");
+    view.expect("My retained name");
+    assert_eq!(
+        Store::load(&machine.directory).unwrap().settings.forwards[0],
+        rule
+    );
+    assert_eq!(tunnel_pid(&machine), pid);
+    view.send("\x1b");
+    view.expect("Saved connections");
+    view.send("\r");
+    view.wait_for(|| state(&machine, &rule.id) == "OFF");
+    view.close();
+    let mut reopened = Session::start(temp.path(), &machine.id);
+    reopened.expect_row("EditRunning", "OFF");
+    assert_eq!(state(&machine, &rule.id), "OFF");
+    reopened.close();
 }
 
 #[test]

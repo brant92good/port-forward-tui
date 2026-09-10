@@ -1,5 +1,41 @@
 # Native verification
 
+## v0.9.0 candidate: editing, groups, output and title preview
+
+These changes are source-qualified locally; the new five-target release and
+actual HTTPS asset gates are pending. Earlier released evidence below remains
+historical. macOS remains beta.
+
+- The E form includes the existing Open automatically preference. Metadata-only
+  edits do not call the controller or change a current connection. Tests cover
+  stale favorites/options, invalid options, separate-file partial failures,
+  on/off round trips, new-view behavior and small form navigation.
+- Name-first rows sit under nonselectable server headings. Buffer tests exercise
+  narrow viewports, Unicode, long names and selected-row visibility; actual
+  keyboard scenarios retain their machine association and saved-value checks.
+- [Buffered-output measurements](rendering.md) compare identical frame bytes in
+  hidden ConPTY sessions. Failure tests ensure a dropped writer cannot replay
+  buffered content after leaving the alternate screen. They do not measure
+  physical painting or desktop return shortcuts.
+- T explicitly previews one ON forward's HTTP HTML title. Tests cover response,
+  size, time, encoding and control-text limits; saved names and connection
+  state remain unchanged. An actual disposable OpenSSH forward carried the
+  controlled HTML response. U is view-only; this is not process discovery,
+  authentication, HTTPS or JavaScript execution.
+
+The combined default Windows suite passed 57 active tests, with four deliberate
+harness-specific ignores. The separate actual SSH title case also passed.
+All-target/all-features Clippy passed after the screenshot feature was added.
+Native documentation captures use the actual widget renderers with synthetic
+state; no request is made to create the title screenshot.
+
+Four local notice-collector tests pass. An isolated Windows installer fixture
+passes full-notice installation/update, explicit 0.8.1 legacy installation,
+and rejection of five malformed/tampered bundle variants without changing
+installed files. The real 0.9 package, Unix notice installers and public HTTPS
+downloads still require their release-matrix checks. Normal use remains compiled;
+these Python programs are developer fixtures only.
+
 ## v0.8.1 automatic opening
 
 The v0.8.1 release adds per-favorite opt-in preferences. Local

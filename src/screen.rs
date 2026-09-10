@@ -20,10 +20,49 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::{
-    io::{self, IsTerminal, Stderr},
+    io::{self, BufWriter, IsTerminal, Stderr, Write},
     time::Duration,
 };
-pub type Screen = Terminal<CrosstermBackend<Stderr>>;
+pub type Screen = Terminal<CrosstermBackend<FrameWriter<Stderr>>>;
+const OUTPUT_BUFFER_BYTES: usize = 64 * 1024;
+
+/// Buffered terminal output whose destruction never retries a failed frame.
+/// Completed Ratatui draws flush explicitly; teardown discards any remainder.
+pub struct FrameWriter<W: Write>(Option<BufWriter<W>>);
+impl<W: Write> FrameWriter<W> {
+    pub fn new(writer: W) -> Self {
+        Self(Some(BufWriter::with_capacity(OUTPUT_BUFFER_BYTES, writer)))
+    }
+}
+impl<W: Write> Write for FrameWriter<W> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.as_mut().unwrap().write(bytes)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.as_mut().unwrap().flush()
+    }
+}
+impl<W: Write> Drop for FrameWriter<W> {
+    fn drop(&mut self) {
+        if let Some(writer) = self.0.take() {
+            let _ = writer.into_parts();
+        }
+    }
+}
+
+fn buffered_backend<W: Write>(writer: W) -> CrosstermBackend<FrameWriter<W>> {
+    // Crossterm queues individual cells. Stderr is unbuffered, so writing those
+    // cells directly makes a large frame visibly arrive line by line in ConPTY.
+    // Ratatui flushes each completed draw; capacity bounds unusually large frames.
+    CrosstermBackend::new(FrameWriter::new(writer))
+}
+
+fn discard_pending<W: Write>(backend: &mut CrosstermBackend<FrameWriter<W>>, replacement: W) {
+    // A failed/partial flush must not be retried by BufWriter::drop after the
+    // alternate screen has closed. Later Terminal cursor cleanup has no frame
+    // bytes left to spill into the caller's shell.
+    *backend = CrosstermBackend::new(FrameWriter(Some(BufWriter::with_capacity(0, replacement))));
+}
 pub const ACCENT: Color = Color::Rgb(96, 218, 224);
 pub const MUTED: Color = Color::Rgb(153, 164, 182);
 pub const BG: Color = Color::Rgb(17, 22, 32);
@@ -71,7 +110,7 @@ impl Session {
                 EnableFocusChange,
                 EnableBracketedPaste
             )?;
-            Ok(Terminal::new(CrosstermBackend::new(io::stderr()))?)
+            Ok(Terminal::new(buffered_backend(io::stderr()))?)
         })();
         match result {
             Ok(terminal) => Ok(Self { terminal }),
@@ -90,6 +129,10 @@ impl Session {
 }
 impl Drop for Session {
     fn drop(&mut self) {
+        // Finish output while still on the alternate screen, then discard any
+        // remainder on error before emitting the real leave-screen command.
+        let _ = self.terminal.show_cursor();
+        discard_pending(self.terminal.backend_mut(), io::stderr());
         let _ = terminal::disable_raw_mode();
         let _ = execute!(
             io::stderr(),
@@ -97,7 +140,6 @@ impl Drop for Session {
             DisableFocusChange,
             DisableBracketedPaste
         );
-        let _ = self.terminal.show_cursor();
     }
 }
 pub fn key() -> Result<Option<Event>> {
@@ -318,6 +360,106 @@ pub fn message(screen: &mut Screen, title: &str, text: &str, confirmation: bool)
             }
             if !confirmation && matches!(key.code, KeyCode::Enter | KeyCode::Char('q' | '?')) {
                 return Ok(true);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    use std::{cell::RefCell, rc::Rc};
+
+    #[derive(Default)]
+    struct State {
+        bytes: Vec<u8>,
+        writes: usize,
+        flushes: usize,
+        short_write: bool,
+        fail_write_once: bool,
+        fail_flush_once: bool,
+    }
+    #[derive(Clone, Default)]
+    struct Recorder(Rc<RefCell<State>>);
+    impl Write for Recorder {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            let mut state = self.0.borrow_mut();
+            if state.fail_write_once {
+                state.fail_write_once = false;
+                return Err(io::Error::other("owned transient write failure"));
+            }
+            let count = if state.short_write {
+                bytes.len().min(3)
+            } else {
+                bytes.len()
+            };
+            state.bytes.extend_from_slice(&bytes[..count]);
+            state.writes += 1;
+            if state.short_write {
+                state.short_write = false;
+                state.fail_write_once = true;
+            }
+            Ok(count)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            let mut state = self.0.borrow_mut();
+            state.flushes += 1;
+            if state.fail_flush_once {
+                state.fail_flush_once = false;
+                Err(io::Error::other("owned transient flush failure"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn frame_writer_batches_cells_and_flushes_each_completed_frame() {
+        let record = Recorder::default();
+        let mut backend = buffered_backend(record.clone());
+        let frame = "\x1b[2J\x1b[1;1HUnicode \u{958b}\u{767c} frame ".repeat(400);
+        for byte in frame.as_bytes() {
+            backend.write_all(&[*byte]).unwrap();
+        }
+        assert_eq!(
+            record.0.borrow().writes,
+            0,
+            "Small cells must stay buffered"
+        );
+        Write::flush(&mut backend).unwrap();
+        assert_eq!(record.0.borrow().bytes, frame.as_bytes());
+        assert_eq!(record.0.borrow().writes, 1);
+        backend.write_all(b"next frame").unwrap();
+        Write::flush(&mut backend).unwrap();
+        assert!(record.0.borrow().bytes.ends_with(b"next frame"));
+        assert_eq!(record.0.borrow().writes, 2);
+    }
+
+    #[test]
+    fn frame_writer_teardown_never_replays_failed_frame_after_leaving_screen() {
+        for fail_during_write in [true, false] {
+            let record = Recorder::default();
+            let mut backend = buffered_backend(record.clone());
+            backend
+                .write_all(b"FRAME-CONTENT-THAT-MUST-NOT-SPILL")
+                .unwrap();
+            if fail_during_write {
+                record.0.borrow_mut().short_write = true;
+            } else {
+                record.0.borrow_mut().fail_flush_once = true;
+            }
+            assert!(Write::flush(&mut backend).is_err());
+            // The real session invokes this before its raw LeaveAlternateScreen.
+            // The transient failure is now gone: an accidental retry would work
+            // and expose retained frame bytes in the caller's shell.
+            discard_pending(&mut backend, record.clone());
+            let before_leave = record.0.borrow().bytes.len();
+            let mut raw = record.clone();
+            raw.write_all(b"\x1b[?1049l").unwrap();
+            drop(backend);
+            assert_eq!(&record.0.borrow().bytes[before_leave..], b"\x1b[?1049l");
+            if fail_during_write {
+                assert_eq!(&record.0.borrow().bytes[..before_leave], b"FRA");
             }
         }
     }

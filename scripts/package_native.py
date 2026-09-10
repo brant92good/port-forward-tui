@@ -15,8 +15,8 @@ def main():
     root = Path(__file__).resolve().parents[1]
     binary = (options.binary or root/'target'/options.target/'release'/'ports').resolve(strict=True)
     options.output.mkdir(parents=True, exist_ok=True)
-    if subprocess.check_output([str(binary), '--version'], text=True).strip() != 'ports 0.8.1':
-        raise ValueError('Expected Ports 0.8.1')
+    if subprocess.check_output([str(binary), '--version'], text=True).strip() != 'ports 0.9.0':
+        raise ValueError('Expected Ports 0.9.0')
     archive = options.output / f'ports-{options.target}.tar.gz'
     if archive.exists():
         raise FileExistsError('Use another output directory; release bytes cannot be replaced.')
@@ -25,9 +25,13 @@ def main():
         executable = stage/'ports'
         executable.write_bytes(binary.read_bytes())
         executable.chmod(0o755)
-        (stage/'SHA256SUMS').write_text(hashlib.sha256(executable.read_bytes()).hexdigest()+'  ports\n')
+        (stage/'LICENSE.txt').write_bytes((root/'LICENSE').read_bytes())
+        (stage/'THIRD_PARTY_NOTICES.txt').write_bytes((root/'docs/licenses/THIRD_PARTY_NOTICES.txt').read_bytes())
+        names = ('ports', 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt')
+        (stage/'SHA256SUMS').write_text(''.join(hashlib.sha256((stage/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in names), encoding='ascii')
         with tarfile.open(archive, 'w:gz') as bundle:
-            bundle.add(executable, arcname='ports')
+            for name in names:
+                bundle.add(stage/name, arcname=name)
             bundle.add(stage/'SHA256SUMS', arcname='SHA256SUMS')
     archive.with_name(archive.name+'.sha256').write_text(hashlib.sha256(archive.read_bytes()).hexdigest()+'  '+archive.name+'\n')
     print(archive)

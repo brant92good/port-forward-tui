@@ -61,7 +61,12 @@ jobs:
             ${{ runner.temp }}/ports-capture-*/stdout.log
             ${{ runner.temp }}/ports-capture-*/stderr.log
           if-no-files-found: ignore
-      - run: cargo +1.94.0 clippy --locked --all-targets --target ${{ matrix.target }} -- -D warnings
+      - run: cargo +1.94.0 clippy --locked --all-targets --all-features --target ${{ matrix.target }} -- -D warnings
+      - name: Check locked dependency notices and installer archive contracts
+        run: |
+          python scripts/test_collect_licenses.py
+          python scripts/collect_licenses.py --check
+          python scripts/check_package_notices.py
       - run: cargo +1.94.0 build --release --locked --target ${{ matrix.target }}
       - name: Historical/native controller protocol and lock compatibility
         if: runner.os == 'Windows'
@@ -110,7 +115,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat dist/*.sha256 > dist/SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --prerelease --title "Ports $GITHUB_REF_NAME" --notes 'Compiled Rust apps for Windows, Linux and macOS. macOS remains beta. See README and verification notes for supported behavior and remaining desktop qualification.'
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --prerelease --title "Ports $GITHUB_REF_NAME" --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md"
   released-install:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: prerelease

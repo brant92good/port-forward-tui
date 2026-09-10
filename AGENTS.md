@@ -22,6 +22,11 @@ See docs/automation.md for schema version 1 and exit codes 0/1/2.
 - Keep saved schemas, IDs, per-device paths and protocol-1 compatibility.
 - Preserve concurrent edits through the controller; stale edits/deletes must fail.
 - A/quick entry save and connect. E saves; active edits restart the changed mapping.
+- E also edits Open automatically. Checkbox-only changes never call the
+  controller. A partial field/options save must be reported honestly; preserve
+  concurrent edits and the user's input on failure.
+- T alone requests a bounded local HTTP title. U changes only this view's label;
+  saved names and JSON stay unchanged. Never probe pages automatically.
 - OFF stays off on refresh. Only a genuinely new TUI may apply a saved
   `open_automatically` opt-in; absence means false. Stop, delete and stop-all
   cancel pending retries; Stop/Q cancel unsent new-view work. Read-only commands,
@@ -44,10 +49,15 @@ See docs/reference.md for the module map. Application code is in src/, tests in
 tests/, Windows helpers in native/, setup/release tools in scripts/.
 
 Run `cargo test --locked --all-targets` and
-`cargo clippy --locked --all-targets -- -D warnings`. ConPTY tests own their
+`cargo clippy --locked --all-targets --all-features -- -D warnings`. ConPTY tests own their
 pseudo-terminal and do not open desktop windows. Real SSH checks use disposable
 fixtures and explicit cleanup. Keep behavioral evidence distinct from compilation,
 simulated states, old Python tests and actual released-download verification.
+
+Run `cargo run --locked --features screenshots --example capture` for actual
+widget images with synthetic data. License collection/package tools are developer
+tools; normal installs need no Python. Check `scripts/collect_licenses.py --check`
+and `scripts/check_package_notices.py` when changing dependencies or bundle shape.
 
 Build helpers only into artifact directories. The checkout may also be used by
 an existing installation; do not overwrite live launchers during development.
