@@ -29,9 +29,8 @@ wrapper chains are regression gates too. All passed locally, including an
 unrelated inheritable pipe and exact Unicode, spaced and trailing-backslash
 paths. The hosted worker's job-free checks and both capture cases passed in
 [run 34393598746](https://github.com/brant92good/port-forward-tui/actions/runs/34393598746)
-and again in the v0.7.3 release below. The actual Windows Terminal window-close
-test belongs to the integration layer; these process tests do not substitute
-for that hosting check.
+and again in the v0.7.3 release below. A separate actual Windows Terminal check,
+described below, now also verifies first-save and window-close behavior.
 
 ## Verified locally on Windows
 
@@ -129,7 +128,20 @@ Those exact Windows bytes also carried real HTTP200 traffic through an existing
 trusted SSH connection using isolated saved data and an ephemeral local port.
 The controller stayed alive after the launching CLI exited; stopping released
 the port and fixture cleanup completed. This is a local one-computer check,
-without desktop activation, not a Windows network-roaming or window-close test.
+without desktop activation; it does not test Windows network roaming.
+
+The integration layer separately ran these same released Ports bytes inside a
+real Windows Terminal window. The first saved OFF rule started its controller
+from inside that window; the CLI exited successfully and its captured streams
+reached EOF. Closing the owned window left the same controller responding to
+authenticated requests. Cleanup then verified the launching processes had exited
+and shut down only that fixture controller. The window measured 701 by 400 pixels,
+and the foreground window stayed unchanged before, during and after the test.
+This single local check used no SSH connection or keyboard input. Combined with
+the separate traffic check above, it covers both real forwarding and actual
+Terminal window closure without claiming to test a forwarding connection during
+that window-close run. It does not qualify hotkeys, taskbar grouping or every
+Windows host's process restrictions.
 
 ### Earlier v0.7.1 installation checks
 
