@@ -602,7 +602,9 @@ fn automatic_settings_new_views_two_hosts_keep_running_pids_and_manual_off() {
             .unwrap()
             .enabled(&one.id)
     });
-    setup.expect("Settings saved");
+    // Background completion messages may replace the save toast immediately.
+    // The main-row detail proves the settings modal closed with the saved value.
+    setup.expect("Open automatically: on (F2 settings)");
     assert_eq!(
         state(&first, &one.id),
         "OFF",

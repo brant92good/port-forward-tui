@@ -15,7 +15,7 @@ terminal closed.
 
 [Install](#install) · [First connection](#first-connection) · [Agent commands](#commands-for-your-agent) · [How it works](docs/reference.md)
 
-> Development: opt-in automatic opening is being qualified for v0.8.0.
+> Development: opt-in automatic opening is being qualified for v0.8.1.
 > The install commands below use published v0.7.3; macOS remains beta.
 > [What was tested](docs/verification.md).
 

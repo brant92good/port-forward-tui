@@ -2,7 +2,7 @@
 
 ## Automatic opening candidate
 
-The v0.8.0 development candidate adds per-favorite opt-in preferences. Local
+The v0.8.1 development candidate adds per-favorite opt-in preferences. Local
 Windows tests cover separate metadata/unchanged legacy schema, concurrent
 preference edits, malformed options, frozen destination/favorite checks and
 read-only CLI behavior. Actual ConPTY checks use isolated controllers and
@@ -11,6 +11,13 @@ concurrent views retaining running PIDs, manual Stop surviving refresh,
 new-view reapplication, Quit/Stop-all cancellation, retrying port reservations
 and foreground-only scope/cleanup. No personal forward or desktop window is
 used. Hosted release and public HTTPS qualification are still pending.
+
+The v0.8.0 tag remains immutable and has no assets. Its ARM64 release test
+waited for a brief settings-save message that a concurrent automatic completion
+could replace. The saved preference and OFF state were correct. v0.8.1 changes
+that test to inspect the durable saved value and selected-row detail; application
+behavior is unchanged. The original five-platform candidate passed in
+[run 34475514796](https://github.com/brant92good/port-forward-tui/actions/runs/34475514796).
 
 The earlier v0.7.3 evidence below remains historical; its real Windows Terminal
 window-close result does not qualify every new-view preference scenario.

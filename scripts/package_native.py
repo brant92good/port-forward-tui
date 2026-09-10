@@ -15,8 +15,8 @@ def main():
     root = Path(__file__).resolve().parents[1]
     binary = (options.binary or root/'target'/options.target/'release'/'ports').resolve(strict=True)
     options.output.mkdir(parents=True, exist_ok=True)
-    if subprocess.check_output([str(binary), '--version'], text=True).strip() != 'ports 0.8.0':
-        raise ValueError('Expected Ports 0.8.0')
+    if subprocess.check_output([str(binary), '--version'], text=True).strip() != 'ports 0.8.1':
+        raise ValueError('Expected Ports 0.8.1')
     archive = options.output / f'ports-{options.target}.tar.gz'
     if archive.exists():
         raise FileExistsError('Use another output directory; release bytes cannot be replaced.')
