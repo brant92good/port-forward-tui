@@ -1,10 +1,17 @@
 # Native verification
 
-## v0.9.0 candidate: editing, groups, output and title preview
+## v0.9.1 candidate: editing, groups, output and title preview
 
 These changes are source-qualified locally; the new five-target release and
 actual HTTPS asset gates are pending. Earlier released evidence below remains
 historical. macOS remains beta.
+
+The immutable 0.9.0 tag's [native run](https://github.com/brant92good/port-forward-tui/actions/runs/34524770413)
+passed Windows but failed the same new edit-form terminal test on all four Unix
+targets. It sent Escape immediately followed by Q; Unix can decode those bytes
+as Alt+Q, leaving the form open. The test now observes the main view with the
+form absent before sending Q. Its Windows replay passed. Version 0.9.1 reruns
+the full hosted gate; no 0.9.0 release assets were published or replaced.
 
 - The E form includes the existing Open automatically preference. Metadata-only
   edits do not call the controller or change a current connection. Tests cover
@@ -32,7 +39,8 @@ state; no request is made to create the title screenshot.
 Four local notice-collector tests pass. An isolated Windows installer fixture
 passes full-notice installation/update, explicit 0.8.1 legacy installation,
 and rejection of five malformed/tampered bundle variants without changing
-installed files. The real 0.9 package, Unix notice installers and public HTTPS
+installed files. A compiled 0.9.0 Windows ZIP also passed fresh/update, checksum,
+saved-data and polluted-environment checks. The 0.9.1 package, Unix notice installers and public HTTPS
 downloads still require their release-matrix checks. Normal use remains compiled;
 these Python programs are developer fixtures only.
 

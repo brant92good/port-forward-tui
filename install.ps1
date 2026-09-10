@@ -1,6 +1,6 @@
 param(
     [string]$InstallDir = $env:PORTS_INSTALL_DIR,
-    [string]$Version = $(if ($env:PORTS_VERSION) { $env:PORTS_VERSION } else { '0.9.0' }),
+    [string]$Version = $(if ($env:PORTS_VERSION) { $env:PORTS_VERSION } else { '0.9.1' }),
     [string]$Bundle = $env:PORTS_BUNDLE,
     [string]$Sha256 = $env:PORTS_SHA256,
     [switch]$NoPath = ($env:PORTS_NO_PATH -eq '1')

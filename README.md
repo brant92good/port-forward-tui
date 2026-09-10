@@ -15,9 +15,10 @@ terminal closed.
 
 [Install](#install) · [First connection](#first-connection) · [Agent commands](#commands-for-your-agent) · [How it works](docs/reference.md)
 
-> **0.9.0 release candidate:** server groups, an automatic-open checkbox in Edit,
+> **0.9.1 prerelease:** server groups, an automatic-open checkbox in Edit,
 > smoother frame output, and an explicit web-title preview. The commands below
-> target the upcoming release; its assets and HTTPS checks are still pending.
+> use this version's compiled assets. Check [downloads and release status](https://github.com/brant92good/port-forward-tui/releases/tag/v0.9.1)
+> for availability.
 > [Published 0.8.1 instructions](https://github.com/brant92good/port-forward-tui/blob/v0.8.1/README.md#install)
 > remain available. macOS is beta. [What was tested](docs/verification.md).
 
@@ -30,14 +31,14 @@ terminal closed.
 Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.9.0/install.ps1 | iex
+irm https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.9.1/install.ps1 | iex
 ports
 ```
 
 Linux or macOS **beta**:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.9.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.9.1/install.sh | sh
 ```
 
 Open a new terminal and run `ports`.

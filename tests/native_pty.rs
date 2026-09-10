@@ -99,6 +99,20 @@ impl Session {
         self.input.write_all(text.as_bytes()).unwrap();
         self.input.flush().unwrap();
     }
+    fn expect_edit_closed(&mut self) {
+        let deadline = Instant::now() + Duration::from_secs(12);
+        loop {
+            self.pump();
+            let content = self.screen.screen().contents();
+            if content.contains("Saved connections") && !content.contains("Edit favorite") {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Edit did not return to the main view: {content}"
+            );
+        }
+    }
     fn expect_row(&mut self, name: &str, state: &str) {
         let deadline = Instant::now() + Duration::from_secs(12);
         loop {
@@ -154,7 +168,11 @@ impl Session {
                 return;
             }
             self.pump();
-            assert!(Instant::now() < deadline, "View did not close");
+            assert!(
+                Instant::now() < deadline,
+                "View did not close: {}",
+                self.screen.screen().contents()
+            );
         }
     }
 }
@@ -912,7 +930,7 @@ fn edit_checkbox_on_off_cancel_and_f2_share_metadata_without_starting_controller
     view.send("e");
     view.expect("[ ] Open automatically");
     view.send("\t\t \x1b");
-    view.expect("Saved connections");
+    view.expect_edit_closed();
     assert!(
         !auto_open::Preferences::load(&first.directory)
             .unwrap()
@@ -934,6 +952,9 @@ fn edit_checkbox_on_off_cancel_and_f2_share_metadata_without_starting_controller
         "broken"
     );
     reopened.send("\x1b");
+    // On Unix, adjacent Escape and q bytes are one Alt-q key. Observe the
+    // completed modal transition before sending the next independent action.
+    reopened.expect_edit_closed();
     reopened.close();
 }
 
