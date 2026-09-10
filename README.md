@@ -15,9 +15,9 @@ terminal closed.
 
 [Install](#install) · [First connection](#first-connection) · [Agent commands](#commands-for-your-agent) · [How it works](docs/reference.md)
 
-> v0.7.3 candidate: fixes a Windows script-capture hang on first save and restart.
-> The commands below target the patch once its assets pass release qualification.
-> [Current evidence and earlier release checks](docs/verification.md).
+> v0.7.3 binaries are published. Builds and public install/update checks passed
+> on all five targets; macOS remains beta.
+> [What was tested](docs/verification.md).
 
 ![Ports showing saved connections across servers](docs/screenshots/connections.svg)
 

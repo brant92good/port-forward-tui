@@ -1,6 +1,6 @@
 # Native verification
 
-Updated September 10, 2026. Native v0.7.3 is under patch-release qualification. Results below
+Updated September 10, 2026. Native v0.7.3 binaries and installer checks are published. Results below
 describe their actual fixtures, not every developer's computer.
 
 ## Windows captured-command correction
@@ -25,8 +25,13 @@ afterward. Cargo and the hosted Windows runner both own restrictive process jobs
 A CI-only hidden worker must prove that its owned test runs outside those jobs;
 the product's detachment behavior is unchanged. This is an explicit separate gate,
 not a skipped behavior check. Extra inherited handles and both packaged PowerShell
-wrapper chains are regression gates too. Existing ConPTY and compatibility checks
-remain required. Hosted worker and published patch HTTPS evidence are pending.
+wrapper chains are regression gates too. All passed locally, including an
+unrelated inheritable pipe and exact Unicode, spaced and trailing-backslash
+paths. The hosted worker's job-free checks and both capture cases passed in
+[run 34393598746](https://github.com/brant92good/port-forward-tui/actions/runs/34393598746)
+and again in the v0.7.3 release below. The actual Windows Terminal window-close
+test belongs to the integration layer; these process tests do not substitute
+for that hosting check.
 
 ## Verified locally on Windows
 
@@ -106,6 +111,28 @@ The corrected release is v0.7.1.
 
 ## Installation evidence
 
+The immutable v0.7.3 runtime is `6c9c3adea0541209657ba21cb2222110fc3ee1bc`.
+All five native jobs, release packaging and all five public HTTPS install/update
+jobs passed in
+[run 34394389900](https://github.com/brant92good/port-forward-tui/actions/runs/34394389900).
+Windows, Linux x64/ARM64 and macOS Apple Silicon/Intel used the advertised
+installer URL and downloaded the actual published bundles.
+
+The Windows HTTPS test was also repeated locally: fresh installation, update,
+checksum refusal, directory ownership, saved favorites, Unicode/quoted paths,
+polluted environment and unchanged PATH all passed. The released executable
+SHA-256 is `1ef7ba64f8b55dc23d09efcd50ef4f601645288b5144be4ee6085806c2c9a81f`.
+An independent download matched both that executable and the published ZIP
+digest `89287f47046c3030f135e9055609301c69c872a12cd25d35e5e261ec069edb84`.
+
+Those exact Windows bytes also carried real HTTP200 traffic through an existing
+trusted SSH connection using isolated saved data and an ephemeral local port.
+The controller stayed alive after the launching CLI exited; stopping released
+the port and fixture cleanup completed. This is a local one-computer check,
+without desktop activation, not a Windows network-roaming or window-close test.
+
+### Earlier v0.7.1 installation checks
+
 The actual local Windows ZIP passed fresh-install/update checks in an isolated
 Unicode/apostrophe path, checksum-failure refusal, non-owned-directory refusal,
 saved-data preservation and a polluted Python/Conda environment. No live user
@@ -126,7 +153,8 @@ SHA-256 was `b03ae622b861c3a76ab383bf26dcf61600bde794106f94fb40105d66c5b7ee5b`.
 
 ## Not established by these checks
 
-- Real OpenSSH transport on Windows and macOS: not covered by the Linux fixture.
+- Real OpenSSH transport on macOS. The Windows check above covers one existing
+  trusted configuration; it is not the disposable Linux multi-host network fixture.
 - Native Windows desktop focus/taskbar/Explorer behavior: integration-layer
   evidence must be checked separately, using owned test windows.
 - Physical laptop sleep, Wi-Fi roaming and enterprise VPN conditions.
