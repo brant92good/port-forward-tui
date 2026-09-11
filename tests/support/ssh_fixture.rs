@@ -19,9 +19,9 @@ fn main(){
     if directory.join("fixture-stop").exists(){return;}
     let forward=&args[args.iter().position(|arg|arg=="-L").unwrap()+1];
     let port=forward.split(':').nth(1).unwrap().parse::<u16>().unwrap();
-    let listener=TcpListener::bind(("127.0.0.1",port)).unwrap();listener.set_nonblocking(true).unwrap();
     fs::write(directory.join("parent.pid"),std::process::id().to_string()).unwrap();
     record(&directory);
+    let listener=TcpListener::bind(("127.0.0.1",port)).unwrap();listener.set_nonblocking(true).unwrap();
     let _descendant=Command::new(env::current_exe().unwrap()).arg("--descendant").arg(directory.join("child.pid")).spawn().unwrap();
     loop{
         if directory.join("fixture-stop").exists(){return;}
