@@ -25,18 +25,34 @@ pub struct Peer {
     arrived: mpsc::Receiver<()>,
     pub calls: Arc<Mutex<Vec<(String, String)>>>,
     pub states: Arc<Mutex<BTreeMap<String, String>>>,
+    trace: Arc<Mutex<Vec<String>>>,
     worker: Option<thread::JoinHandle<()>>,
 }
 impl Peer {
     pub fn start(directory: &Path, blocked: &'static str, on: &[String], fail: &[String]) -> Self {
-        Self::with_occurrence(directory, blocked, 1, on, fail)
+        Self::with_occurrence(directory, blocked, 1, on, fail, None)
     }
-    pub fn with_occurrence(
+    pub fn change_on_status(
+        directory: &Path,
+        occurrence: usize,
+        change: impl FnOnce() + Send + 'static,
+    ) -> Self {
+        Self::with_occurrence(
+            directory,
+            "status",
+            occurrence,
+            &[],
+            &[],
+            Some(Box::new(change)),
+        )
+    }
+    fn with_occurrence(
         directory: &Path,
         blocked: &'static str,
         occurrence: usize,
         on: &[String],
         fail: &[String],
+        mut change: Option<Box<dyn FnOnce() + Send>>,
     ) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -57,10 +73,19 @@ impl Peer {
                 .collect::<BTreeMap<_, _>>(),
         ));
         let fail = fail.iter().cloned().collect::<BTreeSet<_>>();
+        let trace = Arc::new(Mutex::new(Vec::new()));
+        let trace_worker = trace.clone();
         let (sender, arrived) = mpsc::channel();
         let (released, stopped, recorded, current) =
             (release.clone(), quit.clone(), calls.clone(), states.clone());
         let worker = thread::spawn(move || {
+            let started = Instant::now();
+            let note = |event: String| {
+                trace_worker
+                    .lock()
+                    .unwrap()
+                    .push(format!("{} ms: {event}", started.elapsed().as_millis()));
+            };
             let mut matching_calls = 0;
             while !stopped.load(Ordering::Relaxed) {
                 let Ok((mut stream, _)) = listener.accept() else {
@@ -85,17 +110,29 @@ impl Peer {
                 let command = request["command"].as_str().unwrap().to_owned();
                 let id = request["rule_id"].as_str().unwrap_or("").to_owned();
                 recorded.lock().unwrap().push((command.clone(), id.clone()));
+                note(format!("received {command} {id}"));
                 if command == blocked {
                     matching_calls += 1;
                 }
                 if command == blocked && matching_calls == occurrence {
-                    sender.send(()).unwrap();
-                    let deadline = Instant::now() + Duration::from_secs(5);
-                    while !released.load(Ordering::Relaxed)
-                        && !stopped.load(Ordering::Relaxed)
-                        && Instant::now() < deadline
-                    {
-                        thread::sleep(Duration::from_millis(5));
+                    if let Some(change) = change.take() {
+                        note(format!("status {occurrence}: mutation begin"));
+                        change();
+                        note(format!("status {occurrence}: mutation complete"));
+                        sender.send(()).unwrap();
+                    } else {
+                        sender.send(()).unwrap();
+                        let deadline = Instant::now() + Duration::from_secs(5);
+                        while !released.load(Ordering::Relaxed)
+                            && !stopped.load(Ordering::Relaxed)
+                            && Instant::now() < deadline
+                        {
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        note(format!(
+                            "gate ended: released={}",
+                            released.load(Ordering::Relaxed)
+                        ));
                     }
                 }
                 let failed = command == "start" && fail.contains(&id);
@@ -114,7 +151,8 @@ impl Peer {
                     json!({"ok":true,"protocol":1,"pid":endpoint.pid,"host":settings.host,
                         "forwards":settings.forwards,"states":*current.lock().unwrap(),"details":{},"running":[]})
                 };
-                let _ = writeln!(stream, "{response}");
+                let result = writeln!(stream, "{response}");
+                note(format!("responded {command}: {result:?}"));
             }
         });
         Self {
@@ -123,6 +161,7 @@ impl Peer {
             arrived,
             calls,
             states,
+            trace,
             worker: Some(worker),
         }
     }
@@ -133,6 +172,16 @@ impl Peer {
     }
     pub fn release(&self) {
         self.release.store(true, Ordering::Relaxed);
+    }
+    pub fn wait_changed(&self) {
+        assert!(
+            self.arrived.recv_timeout(Duration::from_secs(8)).is_ok(),
+            "Mutation did not complete: {}",
+            self.trace()
+        );
+    }
+    pub fn trace(&self) -> String {
+        self.trace.lock().unwrap().join("\n")
     }
 }
 impl Drop for Peer {

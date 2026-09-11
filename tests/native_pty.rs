@@ -82,6 +82,9 @@ impl Session {
         }
     }
     fn expect(&mut self, text: &str) {
+        self.expect_with(text, String::new);
+    }
+    fn expect_with(&mut self, text: &str, context: impl Fn() -> String) {
         let deadline = Instant::now() + Duration::from_secs(12);
         loop {
             self.pump();
@@ -90,8 +93,32 @@ impl Session {
             }
             assert!(
                 Instant::now() < deadline,
-                "Missing {text:?}: {}",
-                self.screen.screen().contents()
+                "Missing {text:?}: {}\n{}",
+                self.screen.screen().contents(),
+                context()
+            );
+        }
+    }
+    fn select_last(&mut self, name: &str) {
+        let deadline = Instant::now() + Duration::from_secs(12);
+        let mut next_key = Instant::now();
+        let selected = format!("\u{203a} {name} ");
+        loop {
+            if Instant::now() >= next_key {
+                self.send("\x1b[F");
+                next_key = Instant::now() + Duration::from_millis(100);
+            }
+            self.pump();
+            let content = self.screen.screen().contents();
+            if content.lines().any(|line| {
+                line.trim_start_matches(['\u{2502}', ' '])
+                    .starts_with(&selected)
+            }) {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Final selected row {name:?} missing: {content}"
             );
         }
     }
@@ -385,10 +412,9 @@ fn keyboard_form_multihost_concurrent_view_and_detach() {
             .iter()
             .any(|rule| rule.id == saved.id && rule.name == "Renamed API")
     });
-    // Group headings consume rows: select the saved final row before asserting
-    // its visible text rather than assuming the entire list fits this viewport.
-    first.send("\x1b[F");
-    first.expect("Renamed API");
+    // Disk persistence precedes the worker response and refreshed rows. Repeat
+    // the idempotent navigation until that new final row is actually selected.
+    first.select_last("Renamed API");
     first.send("\x1b[Hn18009:9010 Collision\r");
     first.expect("already requested");
     first.send("\x1b");
@@ -430,8 +456,7 @@ fn keyboard_form_multihost_concurrent_view_and_detach() {
     });
     let mut second = Session::start(temp.path(), &machine.id);
     second.expect("Saved connections");
-    second.send("\x1b[F");
-    second.expect("Renamed API");
+    second.select_last("Renamed API");
     first.close();
     let snapshot = background::exchange(
         &machine.directory,
@@ -447,7 +472,7 @@ fn keyboard_form_multihost_concurrent_view_and_detach() {
             .iter()
             .any(|r| r["id"] == saved.id)
     );
-    second.send("\x1b[F");
+    second.select_last("Renamed API");
     second.send("d");
     second.expect("Delete favorite");
     second.send("y");
@@ -1021,32 +1046,41 @@ fn automatic_dispatch_rechecks_preferences_after_blocked_controller_preparation(
         auto_open::set(&machine.directory, &rule.id, true).unwrap();
         // The old implementation validated before its SECOND status call
         // (inside ensure_daemon), so an edit at this gate escaped validation.
+        // Change metadata inside the request, before its response. Waiting for
+        // a painted frame first can outlast the caller's 500 ms status timeout.
+        let directory = machine.directory.clone();
         let peer =
-            controlled_controller::Peer::with_occurrence(&machine.directory, "status", 2, &[], &[]);
+            controlled_controller::Peer::change_on_status(&machine.directory, 2, move || {
+                match change {
+                    "disable" => auto_open::set(&directory, &rule.id, false).unwrap(),
+                    "favorite" => {
+                        let mut edited = rule.clone();
+                        edited.remote_port += 1;
+                        store.save(vec![edited]).unwrap();
+                    }
+                    _ => {
+                        store.settings.host = "changed.invalid".into();
+                        store.save(vec![rule.clone()]).unwrap();
+                    }
+                }
+            });
         let mut view = Session::start(temp.path(), &machine.id);
+        // Pump the ConPTY cursor-position handshake; the mutation itself no
+        // longer waits for this rendered-frame observation.
         view.expect("Saved connections");
-        peer.wait_blocked();
-        match change {
-            "disable" => auto_open::set(&machine.directory, &rule.id, false).unwrap(),
-            "favorite" => {
-                let mut edited = rule.clone();
-                edited.remote_port += 1;
-                store.save(vec![edited]).unwrap();
-            }
-            _ => {
-                store.settings.host = "changed.invalid".into();
-                store.save(vec![rule.clone()]).unwrap();
-            }
-        }
-        peer.release();
-        view.expect("automatic openings need attention");
+        peer.wait_changed();
+        view.expect_with("automatic openings need attention", || {
+            format!("change={change}\n{}", peer.trace())
+        });
         assert!(
             !peer
                 .calls
                 .lock()
                 .unwrap()
                 .iter()
-                .any(|(command, _)| command == "start")
+                .any(|(command, _)| command == "start"),
+            "change={change}\n{}",
+            peer.trace()
         );
         view.close();
     }
