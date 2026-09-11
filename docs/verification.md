@@ -1,6 +1,34 @@
 # Native verification
 
-## v0.9.1 candidate: editing, groups, output and title preview
+## Unreleased: Windows saves during concurrent reads
+
+This source-only correction passed local Windows tests and independent source
+review. It is not included in the immutable v0.9.1 release; hosted qualification,
+a versioned release and installation remain separate gates.
+
+Windows can reject atomic file replacement while another view or CLI reader
+holds the destination open. The writer now retains the same prepared temporary
+file and retries only replacement errors 5/32 at 5 ms intervals within a 250 ms
+retry budget. It does not replay the edit or any SSH operation. Unix replacement
+is unchanged. This budget does not impose a timeout on filesystem calls or sync.
+Errors identify the read/create/write/sync/replace stage and affected path.
+
+Three file-only regressions cover a reader closing after 100 ms, a reader held
+through the retry budget (old bytes and in-memory settings remain unchanged),
+and an unrelated missing-parent error without retries. The old single-attempt
+implementation fails the reader-release regression with error 5. After restoring
+the fix, the complete local suite passed 60 active tests with four deliberate
+fixture-specific ignores; formatting and all-target/all-features Clippy passed.
+
+## v0.9.1: editing, groups, output and title preview
+
+The published v0.9.1 release subsequently passed all eleven native release and
+download/install jobs in [run 34527217550](https://github.com/brant92good/port-forward-tui/actions/runs/34527217550).
+The candidate observations below are historical; their pending release checks
+were resolved by that run. macOS desktop use remains beta. The Windows save fix
+above is newer source and is not part of v0.9.1.
+
+### Historical candidate observations
 
 These changes are source-qualified locally; the new five-target release and
 actual HTTPS asset gates are pending. Earlier released evidence below remains

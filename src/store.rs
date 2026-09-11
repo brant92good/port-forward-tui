@@ -199,7 +199,8 @@ impl Store {
     pub fn load(directory: &Path) -> Result<Self> {
         let path = directory.join("forwards.json");
         let settings = if path.exists() {
-            let raw = fs::read(path)?;
+            let raw = fs::read(&path)
+                .with_context(|| format!("Cannot read favorites {}", path.display()))?;
             ensure!(
                 raw.len() <= 4 * 1024 * 1024,
                 "Favorites file exceeds the size limit."
@@ -247,12 +248,55 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     let mut raw = serde_json::to_vec_pretty(value)?;
     raw.push(b'\n');
     let parent = path.parent().context("File needs a parent directory")?;
-    fs::create_dir_all(parent)?;
-    let mut file = tempfile::NamedTempFile::new_in(parent)?;
-    file.write_all(&raw)?;
-    file.as_file().sync_all()?;
-    file.persist(path).map_err(|e| e.error)?;
+    fs::create_dir_all(parent)
+        .with_context(|| format!("Cannot create settings directory {}", parent.display()))?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).with_context(|| {
+        format!(
+            "Cannot create temporary settings file for {}",
+            path.display()
+        )
+    })?;
+    file.write_all(&raw).with_context(|| {
+        format!(
+            "Cannot write temporary settings file for {}",
+            path.display()
+        )
+    })?;
+    file.as_file()
+        .sync_all()
+        .with_context(|| format!("Cannot sync temporary settings file for {}", path.display()))?;
+    persist_json(file, path)
+        .with_context(|| format!("Cannot replace settings file {}", path.display()))?;
     Ok(())
+}
+#[cfg(not(windows))]
+fn persist_json(file: tempfile::NamedTempFile, path: &Path) -> std::io::Result<()> {
+    file.persist(path).map(|_| ()).map_err(|error| error.error)
+}
+#[cfg(windows)]
+fn persist_json(mut file: tempfile::NamedTempFile, path: &Path) -> std::io::Result<()> {
+    // MoveFileEx can deny replacement while another view briefly reads the
+    // destination. Retry only publication of these already-written bytes;
+    // never repeat the caller's edit, validation, or SSH operation.
+    let deadline = Instant::now() + Duration::from_millis(250);
+    loop {
+        match file.persist(path) {
+            Ok(_) => return Ok(()),
+            Err(error) => {
+                if matches!(error.error.raw_os_error(), Some(5 | 32)) {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if !remaining.is_zero() {
+                        thread::sleep(remaining.min(Duration::from_millis(5)));
+                        if Instant::now() < deadline {
+                            file = error.file;
+                            continue;
+                        }
+                    }
+                }
+                return Err(error.error);
+            }
+        }
+    }
 }
 pub struct Lock(File);
 impl Drop for Lock {
@@ -327,5 +371,67 @@ mod path_tests {
         );
         assert!(!temp.path().join("missing").exists());
         assert!(!temp.path().join("data").exists());
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_persist_tests {
+    use super::*;
+
+    #[test]
+    fn reader_release_allows_publication_of_the_same_prepared_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let destination = temp.path().join("settings.json");
+        fs::write(&destination, b"old").unwrap();
+        let mut prepared = tempfile::NamedTempFile::new_in(temp.path()).unwrap();
+        prepared.write_all(b"new").unwrap();
+        prepared.as_file().sync_all().unwrap();
+        let reader = File::open(&destination).unwrap();
+        let release = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            drop(reader);
+        });
+        let result = persist_json(prepared, &destination);
+        release.join().unwrap();
+        result.unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"new");
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn held_reader_preserves_store_and_old_bytes_after_retry_budget() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::load(temp.path()).unwrap();
+        let original = Forward::new(18001, 8001, "Original").unwrap();
+        store.save(vec![original.clone()]).unwrap();
+        let before = fs::read(store.path()).unwrap();
+        let reader = File::open(store.path()).unwrap();
+        let mut edited = original.clone();
+        edited.name = "Edited".into();
+        let started = Instant::now();
+        let error = store.save(vec![edited]).unwrap_err();
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_millis(200), "{elapsed:?}");
+        assert!(format!("{error:#}").contains("Cannot replace settings file"));
+        assert!(matches!(
+            error
+                .downcast_ref::<std::io::Error>()
+                .unwrap()
+                .raw_os_error(),
+            Some(5 | 32)
+        ));
+        assert_eq!(store.settings.forwards, vec![original]);
+        assert_eq!(fs::read(store.path()).unwrap(), before);
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+        drop(reader);
+    }
+
+    #[test]
+    fn missing_destination_parent_fails_without_sharing_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let prepared = tempfile::NamedTempFile::new_in(temp.path()).unwrap();
+        let error = persist_json(prepared, &temp.path().join("missing/settings.json")).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(3));
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
     }
 }
