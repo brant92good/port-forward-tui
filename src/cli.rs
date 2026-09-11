@@ -1,5 +1,5 @@
 use crate::{
-    auto_open, background,
+    auto_open, background, channel,
     machines::{self, Catalog, Machine},
     store::{self, Forward, Store},
 };
@@ -16,12 +16,12 @@ use std::{
 #[command(
     name = "ports",
     version,
-    about = "Saved SSH forwards, shared across terminal views."
+    about = "Ports BETA: saved SSH forwards and SOCKS5 proxies in an isolated channel."
 )]
 pub struct Options {
     #[arg(long, global = true)]
     pub json: bool,
-    #[arg(long,global=true,default_value_os_t=store::default_directory())]
+    #[arg(long,global=true,default_value_os_t=channel::default_directory())]
     pub data_dir: PathBuf,
     #[arg(long, global = true)]
     pub machine: Option<String>,
@@ -46,6 +46,11 @@ pub struct Options {
 }
 #[derive(Debug, Subcommand)]
 pub enum Action {
+    /// Copy saved stable machines into a new beta directory; never imports live state or auto-open intent.
+    ImportStable {
+        #[arg(long)]
+        from: PathBuf,
+    },
     Machines {
         #[command(subcommand)]
         action: MachineAction,
@@ -63,8 +68,13 @@ pub enum Action {
     RestartManager,
     StopAll,
     Save {
-        #[arg(long,value_parser=store::port)]
-        remote: u16,
+        /// Fixed app port on the SSH server. Mutually exclusive with --socks.
+        #[arg(long,value_parser=store::port,required_unless_present="socks",conflicts_with="socks")]
+        remote: Option<u16>,
+        /// Save a SOCKS5 proxy instead of a fixed forward; local port defaults to 1080.
+        #[arg(long, conflicts_with = "remote")]
+        socks: bool,
+        /// Local listening port; defaults to --remote, or 1080 with --socks.
         #[arg(long,value_parser=store::port)]
         local: Option<u16>,
         #[arg(long, default_value = "")]
@@ -181,7 +191,7 @@ pub fn listing(store: &Store) -> Result<Value> {
                     .unwrap_or("OFF"))
                 .unwrap_or("UNKNOWN")
         );
-        rule["url"] = json!(format!("http://127.0.0.1:{}", rule["local_port"]));
+        annotate_endpoint(rule)?;
     }
     let mut result = json!({"host":store.settings.host,"background":if snapshot.is_some(){"connected"}else{"not_connected"},
         "warning":if snapshot.is_none()&&store.directory.join("endpoint.json").exists(){"Live status is unavailable. Existing connections might still be running."}else{""},"forwards":rules});
@@ -192,6 +202,12 @@ pub fn listing(store: &Store) -> Result<Value> {
     }
     Ok(result)
 }
+fn annotate_endpoint(value: &mut Value) -> Result<()> {
+    let rule: Forward = serde_json::from_value(value.clone())?;
+    value["kind"] = json!(if rule.is_socks() { "socks" } else { "local" });
+    value["url"] = json!(rule.endpoint_url());
+    Ok(())
+}
 fn doctor(catalog: &Catalog) -> Value {
     let ssh = crate::process::ssh_executable();
     let saved = catalog.list();
@@ -199,12 +215,13 @@ fn doctor(catalog: &Catalog) -> Value {
     json!({"ok":ok,"checks":[
         {"name":"OpenSSH client","ok":ssh.is_ok(),"detail":ssh.map(|p|p.display().to_string()).unwrap_or_else(|e|e.to_string())},
         {"name":"Saved machines","ok":saved.is_ok(),"detail":saved.map(|m|format!("{} machines; no connection attempted",m.len())).unwrap_or_else(|e|e.to_string())},
-        {"name":"Runtime","ok":true,"detail":format!("Ports {} native Rust / {} / {}",env!("CARGO_PKG_VERSION"),std::env::consts::OS,std::env::consts::ARCH)}]})
+        {"name":"Runtime","ok":true,"detail":format!("Ports BETA {} native Rust / {} / {}",env!("CARGO_PKG_VERSION"),std::env::consts::OS,std::env::consts::ARCH)}]})
 }
 pub fn execute(options: &Options) -> Result<Value> {
     let catalog = Catalog::new(&options.data_dir)?;
     let action = options.command.as_ref().context("Missing command")?;
     let mut command_name = match action {
+        Action::ImportStable { .. } => "import-stable",
         Action::Machines { .. } => "machines",
         Action::Doctor => "doctor",
         Action::List => "list",
@@ -216,7 +233,9 @@ pub fn execute(options: &Options) -> Result<Value> {
         Action::Stop { .. } => "stop",
         Action::Delete { .. } => "delete",
     };
-    let mut result = if let Action::Machines { action } = action {
+    let mut result = if let Action::ImportStable { from } = action {
+        json!({"machines":channel::import_stable(from, &options.data_dir)?,"notice":"Imported saved metadata into beta. No connections started; automatic opening is off."})
+    } else if let Action::Machines { action } = action {
         match action {
             MachineAction::List => json!({"machines":catalog.list()?}),
             MachineAction::Add {
@@ -313,7 +332,7 @@ pub fn execute(options: &Options) -> Result<Value> {
                 for rule in &mut rules {
                     let id = rule["id"].as_str().unwrap_or("").to_owned();
                     rule["state"] = snapshot["states"][&id].as_str().unwrap_or("OFF").into();
-                    rule["url"] = json!(format!("http://127.0.0.1:{}", rule["local_port"]));
+                    annotate_endpoint(rule)?;
                 }
                 json!({"host":snapshot["host"],"background":"connected","forwards":rules})
             } else {
@@ -326,7 +345,7 @@ pub fn execute(options: &Options) -> Result<Value> {
                 } else {
                     ensure!(
                         !store.settings.host.is_empty(),
-                        "Add a machine first: ports machines add YOUR_SSH_NAME."
+                        "Add a machine first with this beta executable: machines add YOUR_SSH_NAME."
                     );
                     ensure!(
                         store.settings.keep_alive,
@@ -341,18 +360,23 @@ pub fn execute(options: &Options) -> Result<Value> {
                         }
                         Action::Save {
                             remote,
+                            socks,
                             local,
                             name,
                         } => {
                             store::name(name, true)
                                 .map_err(|error| UsageError(error.to_string()))?;
+                            let candidate = if *socks {
+                                Forward::socks(local.unwrap_or(1080), name)?
+                            } else {
+                                let remote = remote.context("Use --remote PORT or --socks.")?;
+                                Forward::new(local.unwrap_or(remote), remote, name)?
+                            };
                             let snapshot = background::ensure_daemon(&directory)?;
                             let rules: Vec<Forward> =
                                 serde_json::from_value(snapshot["forwards"].clone())?;
-                            let previous = rules.into_iter().find(|rule| {
-                                rule.local_port == local.unwrap_or(*remote)
-                                    && rule.remote_port == *remote
-                            });
+                            let previous =
+                                rules.into_iter().find(|rule| rule.same_mapping(&candidate));
                             let rule = if let Some(previous) = &previous {
                                 let mut rule = previous.clone();
                                 if !name.trim().is_empty() {
@@ -360,7 +384,7 @@ pub fn execute(options: &Options) -> Result<Value> {
                                 }
                                 rule
                             } else {
-                                Forward::new(local.unwrap_or(*remote), *remote, name)?
+                                candidate
                             };
                             let result = background::exchange(
                                 &directory,
@@ -418,7 +442,9 @@ pub fn execute(options: &Options) -> Result<Value> {
             }
         }
     };
-    result["schema_version"] = json!(1);
+    result["schema_version"] = json!(2);
+    result["channel"] = json!(channel::CHANNEL);
+    result["version"] = json!(env!("CARGO_PKG_VERSION"));
     if result.get("ok").is_none() {
         result["ok"] = json!(true);
     }
@@ -461,12 +487,22 @@ pub fn print(result: &Value, as_json: bool) {
         );
     }
     for rule in result["forwards"].as_array().into_iter().flatten() {
+        let mapping = if rule["kind"] == "socks" {
+            format!(
+                "SOCKS5 {} (configure your client)",
+                rule["url"].as_str().unwrap_or("")
+            )
+        } else {
+            format!(
+                "local {} → remote {}",
+                rule["local_port"], rule["remote_port"]
+            )
+        };
         println!(
-            "{:10} {} | local {} → remote {} | id {}",
+            "{:10} {} | {} | id {}",
             rule["state"].as_str().unwrap_or("OFF"),
             rule["name"].as_str().unwrap_or(""),
-            rule["local_port"],
-            rule["remote_port"],
+            mapping,
             rule["id"].as_str().unwrap_or("")
         );
     }
@@ -481,5 +517,65 @@ pub fn print(result: &Value, as_json: bool) {
     }
     if let Some(warning) = result["automatic_opening_warning"].as_str() {
         println!("{warning}");
+    }
+}
+
+#[cfg(test)]
+mod socks_tests {
+    use super::*;
+
+    #[test]
+    fn save_requires_one_mode_and_accepts_proxy_default_or_custom_port() {
+        assert!(Options::try_parse_from(["ports", "save"]).is_err());
+        assert!(Options::try_parse_from(["ports", "save", "--socks", "--remote", "8000"]).is_err());
+        assert!(Options::try_parse_from(["ports", "save", "--socks", "--local", "0"]).is_err());
+        let parsed = Options::try_parse_from(["ports", "save", "--socks"]).unwrap();
+        assert!(matches!(
+            parsed.command,
+            Some(Action::Save {
+                socks: true,
+                remote: None,
+                local: None,
+                ..
+            })
+        ));
+        let parsed =
+            Options::try_parse_from(["ports", "save", "--socks", "--local", "2080"]).unwrap();
+        assert!(matches!(
+            parsed.command,
+            Some(Action::Save {
+                socks: true,
+                remote: None,
+                local: Some(2080),
+                ..
+            })
+        ));
+        assert!(Options::try_parse_from(["ports", "save", "--remote", "8000"]).is_ok());
+    }
+
+    #[test]
+    fn proxy_listing_is_typed_and_readonly_without_controller() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::load(temp.path()).unwrap();
+        store
+            .save(vec![
+                Forward::socks(1080, "Proxy").unwrap(),
+                Forward::new(18000, 8000, "API").unwrap(),
+            ])
+            .unwrap();
+        let before = std::fs::read(store.path()).unwrap();
+        let listed = listing(&store).unwrap();
+        assert_eq!(listed["forwards"][0]["kind"], "socks");
+        assert!(listed["forwards"][0].get("remote_port").is_none());
+        assert_eq!(
+            listed["forwards"][0]["url"],
+            store.settings.forwards[0].endpoint_url()
+        );
+        assert_eq!(listed["forwards"][0]["state"], "UNKNOWN");
+        assert_eq!(listed["forwards"][1]["kind"], "local");
+        assert_eq!(listed["forwards"][1]["remote_port"], 8000);
+        assert_eq!(std::fs::read(store.path()).unwrap(), before);
+        assert!(!temp.path().join("endpoint.json").exists());
+        assert!(!temp.path().join(auto_open::FILE).exists());
     }
 }

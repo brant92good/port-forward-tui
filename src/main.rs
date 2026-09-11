@@ -10,6 +10,7 @@ use serde_json::json;
 use std::time::Duration;
 fn run(options: &Options) -> Result<i32> {
     port_forward_tui::process::protect_incoming_stdio()?;
+    port_forward_tui::channel::validate_directory(&options.data_dir)?;
     if options.serve {
         background::serve(&options.data_dir)?;
         return Ok(0);
@@ -93,7 +94,7 @@ fn main() {
                 return;
             }
             cli::print(
-                &json!({"schema_version":1,"ok":false,"error":{"code":"invalid_arguments","message":error.to_string()}}),
+                &json!({"schema_version":2,"channel":"beta","version":env!("CARGO_PKG_VERSION"),"ok":false,"error":{"code":"invalid_arguments","message":error.to_string()}}),
                 as_json,
             );
             std::process::exit(2);
@@ -104,7 +105,7 @@ fn main() {
         Err(error) => {
             let usage = error.is::<cli::UsageError>();
             cli::print(
-                &json!({"schema_version":1,"ok":false,"error":{"code":if usage{"invalid_arguments"}else{"operation_failed"},"message":format!("{error:#}")}}),
+                &json!({"schema_version":2,"channel":"beta","version":env!("CARGO_PKG_VERSION"),"ok":false,"error":{"code":if usage{"invalid_arguments"}else{"operation_failed"},"message":format!("{error:#}")}}),
                 as_json,
             );
             if usage { 2 } else { 1 }

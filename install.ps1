@@ -1,4 +1,5 @@
 param(
+    [ValidateSet('stable','beta')][string]$Channel = 'stable',
     [string]$InstallDir = $env:PORTS_INSTALL_DIR,
     [string]$Version = $(if ($env:PORTS_VERSION) { $env:PORTS_VERSION } else { '0.9.1' }),
     [string]$Bundle = $env:PORTS_BUNDLE,
@@ -7,13 +8,32 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'Ports requires 64-bit Windows.' }
-if ($Version -notmatch '^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$') { throw 'Invalid release version.' }
-if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\Ports' }
+if (($Channel -eq 'stable' -and $Version -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z') -or
+    ($Channel -eq 'beta' -and $Version -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-beta\.[1-9][0-9]*\z')) { throw 'Select an exact stable version, or explicitly use -Channel beta with an exact x.y.z-beta.N version.' }
+$portsCommandName = if ($Channel -eq 'beta') { 'ports-beta.exe' } else { 'ports.exe' }
+$portsOwner = if ($Channel -eq 'beta') { 'port-forward-tui-beta' } else { 'port-forward-tui' }
+if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA $(if ($Channel -eq 'beta') { 'Programs\PortsBeta' } else { 'Programs\Ports' }) }
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
+if ($Channel -eq 'beta') {
+    $NoPath = $true # The beta is an explicit command/path, never a stable PATH replacement.
+    $stableRoot = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\Ports')).TrimEnd('\','/')
+    if ($InstallDir.TrimEnd('\','/') -ieq $stableRoot -or $InstallDir.StartsWith($stableRoot+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Beta must not be installed in the stable installation.' }
+    $inspect = $InstallDir
+    while ($inspect) {
+        if ((Test-Path -LiteralPath $inspect) -and ((Get-Item -LiteralPath $inspect -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Beta install paths must not traverse junctions or symbolic links.' }
+        $parent = [IO.Directory]::GetParent($inspect); $inspect = if ($parent) { $parent.FullName } else { $null }
+    }
+}
 $portsMarker = Join-Path $InstallDir '.ports-installer'
 if (Test-Path -LiteralPath $portsMarker) {
-    if ([IO.File]::ReadAllText($portsMarker).Trim() -ne 'port-forward-tui') { throw 'This directory belongs to another application.' }
+    if ([IO.File]::ReadAllText($portsMarker).Trim() -ne $portsOwner) { throw 'This directory belongs to another application or release channel.' }
 } elseif ((Test-Path -LiteralPath $InstallDir) -and @(Get-ChildItem -LiteralPath $InstallDir -Force).Count) { throw 'Choose an empty or installer-owned directory.' }
+if ($Channel -eq 'beta') {
+    foreach ($relative in @('bin','version','.ports-installer','bin\ports-beta.exe','bin\PortsFocus.exe','bin\TerminalViews.exe','bin\LICENSE.txt','bin\THIRD_PARTY_NOTICES.txt')) {
+        $candidate = Join-Path $InstallDir $relative
+        if ((Test-Path -LiteralPath $candidate) -and ((Get-Item -LiteralPath $candidate -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Beta installation files must not traverse junctions or symbolic links.' }
+    }
+}
 function Get-PortsHash([string]$Path) {
     $portsHasher = [Security.Cryptography.SHA256]::Create(); $portsInput = [IO.File]::OpenRead($Path)
     try { ([BitConverter]::ToString($portsHasher.ComputeHash($portsInput))).Replace('-','').ToLowerInvariant() }
@@ -63,6 +83,10 @@ try {
     }
     $portsVersion = & (Join-Path $portsPackage 'ports.exe') --version
     if ($LASTEXITCODE -ne 0 -or $portsVersion -ne "ports $Version") { throw 'The downloaded app could not run or has the wrong version.' }
+    if ($Channel -eq 'beta') {
+        Move-Item -LiteralPath (Join-Path $portsPackage 'ports.exe') -Destination (Join-Path $portsPackage $portsCommandName)
+        $portsFiles = @($portsFiles | ForEach-Object { if ($_ -eq 'ports.exe') { $portsCommandName } else { $_ } })
+    }
     $portsBin = Join-Path $InstallDir 'bin'
     New-Item -ItemType Directory -Path $portsBin -Force | Out-Null
     $portsTransaction = [Guid]::NewGuid().ToString('N')
@@ -78,7 +102,7 @@ try {
             $portsChanges.Add(@{path=$portsDestination;previous=$portsPrevious})
             [IO.File]::Copy((Join-Path $portsPackage $portsName),$portsDestination)
         }
-        [IO.File]::WriteAllText($portsMarker,'port-forward-tui')
+        [IO.File]::WriteAllText($portsMarker,$portsOwner)
         [IO.File]::WriteAllText((Join-Path $InstallDir 'version'),$Version)
     } catch {
         for ($portsIndex=$portsChanges.Count-1; $portsIndex -ge 0; $portsIndex--) {
@@ -94,8 +118,9 @@ try {
         if (-not ($portsEntries | Where-Object { $_.TrimEnd('\') -ieq $portsBin.TrimEnd('\') })) { [Environment]::SetEnvironmentVariable('Path',(($portsEntries + $portsBin) -join ';'),'User') }
         if (-not ($env:Path -split ';' | Where-Object { $_.TrimEnd('\') -ieq $portsBin.TrimEnd('\') })) { $env:Path += ';' + $portsBin }
     }
-    Write-Output "Installed Ports $Version. Run ports."
-    Write-Output "Command: $(Join-Path $portsBin 'ports.exe')"
+    Write-Output "Installed Ports $Version ($Channel)."
+    Write-Output "Command: $(Join-Path $portsBin $portsCommandName)"
+    if ($Channel -eq 'beta') { Write-Output 'BETA: invoke the exact ports-beta.exe path above; PATH and the stable ports command were preserved.' }
     Write-Output 'Add a machine or import SSH aliases on first launch. Open a new terminal if the command is not found yet.'
 } finally {
     $portsResolved = [IO.Path]::GetFullPath($portsStage)

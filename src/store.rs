@@ -11,9 +11,7 @@ use std::{
 };
 
 pub fn default_directory() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("PortForwardTUI")
+    crate::channel::default_directory()
 }
 pub fn host(value: &str) -> Result<String> {
     ensure!(
@@ -89,14 +87,32 @@ fn optional_port<'de, D: serde::Deserializer<'de>>(
         .map(|value| deserialize_port(value).map_err(serde::de::Error::custom))
         .transpose()
 }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForwardKind {
+    #[default]
+    Local,
+    Socks,
+}
+impl ForwardKind {
+    fn is_local(&self) -> bool {
+        *self == Self::Local
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Forward {
     pub id: String,
     pub name: String,
     #[serde(deserialize_with = "deserialize_port")]
     pub local_port: u16,
-    #[serde(deserialize_with = "deserialize_port")]
-    pub remote_port: u16,
+    #[serde(default, skip_serializing_if = "ForwardKind::is_local")]
+    pub kind: ForwardKind,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_port"
+    )]
+    pub remote_port: Option<u16>,
 }
 impl Forward {
     pub fn new(local_port: u16, remote_port: u16, label: &str) -> Result<Self> {
@@ -109,10 +125,42 @@ impl Forward {
                 name
             },
             local_port,
-            remote_port,
+            kind: ForwardKind::Local,
+            remote_port: Some(remote_port),
         };
         rule.validate()?;
         Ok(rule)
+    }
+    pub fn socks(local_port: u16, label: &str) -> Result<Self> {
+        let label = name(label, true)?;
+        let rule = Self {
+            id: new_id(),
+            name: if label.is_empty() {
+                "SOCKS proxy".into()
+            } else {
+                label
+            },
+            local_port,
+            kind: ForwardKind::Socks,
+            remote_port: None,
+        };
+        rule.validate()?;
+        Ok(rule)
+    }
+    pub fn is_socks(&self) -> bool {
+        self.kind == ForwardKind::Socks
+    }
+    pub fn endpoint_url(&self) -> String {
+        format!(
+            "{}://127.0.0.1:{}",
+            if self.is_socks() { "socks5h" } else { "http" },
+            self.local_port
+        )
+    }
+    pub fn same_mapping(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && self.local_port == other.local_port
+            && self.remote_port == other.remote_port
     }
     pub fn validate(&self) -> Result<()> {
         ensure!(valid_id(&self.id), "Invalid favorite ID.");
@@ -121,8 +169,15 @@ impl Forward {
             "Favorite name exceeds 80 characters."
         );
         ensure!(
-            self.local_port > 0 && self.remote_port > 0,
+            self.local_port > 0 && self.remote_port != Some(0),
             "Ports must be between 1 and 65535."
+        );
+        ensure!(
+            matches!(
+                (self.kind, self.remote_port),
+                (ForwardKind::Local, Some(_)) | (ForwardKind::Socks, None)
+            ),
+            "A port forward needs a remote port; a SOCKS proxy must not have one."
         );
         Ok(())
     }
@@ -163,7 +218,14 @@ impl Default for Settings {
 }
 impl Settings {
     pub fn validate(&self) -> Result<()> {
-        ensure!(self.version == 1, "Unsupported favorites file version.");
+        ensure!(
+            matches!(self.version, 1 | 2),
+            "Unsupported favorites file version."
+        );
+        ensure!(
+            self.version == 2 || !self.forwards.iter().any(Forward::is_socks),
+            "SOCKS favorites require file version 2."
+        );
         if !self.host.is_empty() {
             host(&self.host)?;
         }
@@ -223,7 +285,11 @@ impl Store {
     pub fn save(&mut self, forwards: Vec<Forward>) -> Result<()> {
         let mut settings = self.settings.clone();
         settings.forwards = forwards;
+        if settings.forwards.iter().any(Forward::is_socks) {
+            settings.version = 2;
+        }
         settings.validate()?;
+        crate::channel::prepare(&self.directory)?;
         write_json(&self.path(), &settings)?;
         self.settings = settings;
         Ok(())
@@ -422,7 +488,7 @@ mod windows_persist_tests {
         ));
         assert_eq!(store.settings.forwards, vec![original]);
         assert_eq!(fs::read(store.path()).unwrap(), before);
-        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 2);
         drop(reader);
     }
 

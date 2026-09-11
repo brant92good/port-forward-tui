@@ -468,7 +468,7 @@ impl ViewRegistration {
             .context("View record has no name")?
             .to_owned();
         let stem = self.record.file_stem().unwrap().to_string_lossy();
-        self.title = format!("Ports | {} | {}", target, &stem[..6]);
+        self.title = format!("Ports BETA | {} | {}", target, &stem[..6]);
         data["title"] = json!(self.title);
         data["machine"] = json!(machine);
         let previous = self.record.clone();
@@ -556,7 +556,7 @@ pub fn register_ports(
     target: &str,
 ) -> Result<ViewRegistration> {
     let title = format!(
-        "Ports | {} | {}",
+        "Ports BETA | {} | {}",
         target,
         &uuid::Uuid::new_v4().simple().to_string()[..6]
     );

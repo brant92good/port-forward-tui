@@ -14,6 +14,7 @@ import re
 import select
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -188,7 +189,7 @@ class Fixture:
         endpoint = json.loads((self.directory(machine)/'endpoint.json').read_text())
         pid = endpoint['pid']
         self.processes.setdefault(pid, proc_identity(pid))
-        request = dict(protocol=1, token=endpoint['token'], command='status')
+        request = dict(protocol=endpoint['protocol'], token=endpoint['token'], command='status')
         with socket.create_connection(('127.0.0.1', endpoint['port']), timeout=2) as connection:
             connection.settimeout(2)
             connection.sendall(json.dumps(request).encode() + b'\n')
@@ -255,12 +256,69 @@ class Fixture:
         assert not failures, failures
 
 
-def exercise(fixture, gates, http_port, payload):
+def receive_exact(connection, count):
+    result = b''
+    while len(result) < count:
+        chunk = connection.recv(count-len(result))
+        if not chunk:
+            raise EOFError('SOCKS peer closed before its reply was complete')
+        result += chunk
+    return result
+
+
+def socks_request(proxy_port, destination_port, payload=None, hostname=False):
+    """Raw SOCKS5 CONNECT: DOMAIN bytes are sent without client-side DNS lookup."""
+    with socket.create_connection(('127.0.0.1', proxy_port), timeout=3) as connection:
+        connection.settimeout(3)
+        connection.sendall(b'\x05\x01\x00')
+        assert receive_exact(connection, 2) == b'\x05\x00'
+        address = b'\x03\x09localhost' if hostname else b'\x01\x7f\x00\x00\x01'
+        connection.sendall(b'\x05\x01\x00' + address + struct.pack('!H', destination_port))
+        try:
+            header = receive_exact(connection, 4)
+        except (EOFError, ConnectionResetError):
+            if payload is None:
+                return
+            raise
+        assert header[0] == 5 and header[2] == 0
+        if payload is None and header[1] != 0:
+            return
+        assert header[1] == 0, f'SOCKS CONNECT failed: {header!r}'
+        size = {1: 4, 4: 16}.get(header[3])
+        if header[3] == 3:
+            size = receive_exact(connection, 1)[0]
+        assert size is not None
+        receive_exact(connection, size + 2)
+        connection.sendall(b'GET / HTTP/1.0\r\nHost: fixture\r\nConnection: close\r\n\r\n')
+        if payload is None:
+            # OpenSSH can close the channel instead of emitting a SOCKS error
+            # code. A timeout is not accepted as proof of destination refusal.
+            try:
+                assert connection.recv(8192) == b'', 'Refused destination returned application bytes'
+            except ConnectionResetError:
+                pass
+            return
+        raw = b''
+        while True:
+            chunk = connection.recv(8192)
+            if not chunk:
+                break
+            raw += chunk
+            assert len(raw) < 65536
+        headers, body = raw.split(b'\r\n\r\n', 1)
+        assert b' 200 ' in headers.split(b'\r\n', 1)[0] and body == payload, raw
+
+
+def exercise(fixture, gates, http_ports, payloads):
     opener = build_opener(ProxyHandler({}))  # Ignore runner proxy environment for loopback traffic.
 
     def traffic(port):
+        if port == fixture.ports[0]:
+            socks_request(port, http_ports[0], payloads[0])
+            socks_request(port, http_ports[1], payloads[1], hostname=True)
+            return
         with opener.open(f'http://127.0.0.1:{port}/', timeout=2) as response:
-            assert response.read() == payload, 'Forward returned the wrong HTTP payload'
+            assert response.read() == payloads[0], 'Forward returned the wrong HTTP payload'
 
     rules = []
     for index, config in enumerate(fixture.configs):
@@ -269,7 +327,8 @@ def exercise(fixture, gates, http_port, payload):
         fixture.machines.append(machine)
         port = free_port()
         fixture.ports.append(port)
-        saved = fixture.cli('save', '--remote', http_port, '--local', port, '--name', 'Loopback HTTP', machine=machine)
+        kind = ['--socks'] if index == 0 else ['--remote', http_ports[0]]
+        saved = fixture.cli('save', *kind, '--local', port, '--name', 'Proxy' if index == 0 else 'Loopback HTTP', machine=machine)
         rule = saved['id']
         rules.append(rule)
         snapshot = fixture.off_favorites(machine, None)
@@ -285,7 +344,9 @@ def exercise(fixture, gates, http_port, payload):
     overview = fixture.cli('list')
     on_rows = {(row['machine_id'], row['id']) for row in overview['forwards'] if row['state'] == 'ON'}
     assert on_rows == {(a, ra), (b, rb)}, overview
-    print('PASS: two auto-detached native controllers forward real HTTP over OpenSSH; one overview lists both.', flush=True)
+    socks_request(fixture.ports[0], free_port())
+    assert fixture.status(a)['states'][ra] == 'ON', 'Destination refusal stopped the proxy'
+    print('PASS: owned OpenSSH SOCKS reaches two HTTP destinations (IPv4 and raw DOMAIN), refusal leaves proxy ON, fixed -L works concurrently.', flush=True)
 
     def unaffected():
         assert fixture.off_favorites(b, rb)['states'][rb] == 'ON'
@@ -315,7 +376,7 @@ def exercise(fixture, gates, http_port, payload):
         match = re.search(r'Retrying in (\d+)s', detail)
         assert match, detail
         delay = int(match.group(1))
-        args = [action, ra] + (['--yes'] if action == 'delete' else [])
+        args = [action] if action == 'stop-all' else [action, ra] + (['--yes'] if action == 'delete' else [])
         fixture.cli(*args, machine=a)
         # Drain an accept already queued before cancellation; count only after
         # that short grace, then restore the route and exceed its retry timer.
@@ -326,7 +387,7 @@ def exercise(fixture, gates, http_port, payload):
         while time.monotonic() < deadline:
             unaffected()
             snapshot = fixture.off_favorites(a, None)
-            if action == 'stop':
+            if action != 'delete':
                 assert snapshot['states'][ra] == 'OFF', snapshot
             else:
                 # Deletion can retain the stopped runtime entry until shutdown.
@@ -338,6 +399,10 @@ def exercise(fixture, gates, http_port, payload):
         print(f'PASS: {action} while RETRYING cancels future attempts after route recovery; OFF favorites stay OFF.', flush=True)
 
     cancelled('stop')
+    fixture.cli('start', ra, '--wait', '5', machine=a)
+    fixture.wait_state(a, ra, 'ON', unaffected)
+    traffic(fixture.ports[0])
+    cancelled('stop-all')
     fixture.cli('start', ra, '--wait', '5', machine=a)
     fixture.wait_state(a, ra, 'ON', unaffected)
     traffic(fixture.ports[0])
@@ -355,10 +420,11 @@ def main():
     with tempfile.TemporaryDirectory(prefix='ports-openssh-') as temporary:
         root = Path(temporary)
         fixture = Fixture(binary, root)
-        payload = ('ports-http-' + uuid.uuid4().hex).encode()
+        payloads = [('ports-http-' + uuid.uuid4().hex).encode() for _ in range(2)]
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
+                payload = self.server.payload
                 self.send_response(200)
                 self.send_header('Content-Length', str(len(payload)))
                 self.end_headers()
@@ -367,9 +433,21 @@ def main():
             def log_message(self, *args):
                 pass
 
-        http = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        http_thread = threading.Thread(target=http.serve_forever)
-        http_thread.start()
+        http_servers = [ThreadingHTTPServer(('127.0.0.1', 0), Handler) for _ in payloads]
+        class IPv6HTTPServer(ThreadingHTTPServer):
+            address_family = socket.AF_INET6
+
+        # localhost may resolve to ::1 first. Both addresses are fixture-owned;
+        # this tests real hostname resolution without relying on resolver order.
+        ipv6_servers = [IPv6HTTPServer(('::1', server.server_port), Handler) for server in http_servers]
+        all_http_servers = [*http_servers, *ipv6_servers]
+        http_threads = []
+        for http, payload in zip(all_http_servers, payloads * 2):
+            http.payload = payload
+            http_thread = threading.Thread(target=http.serve_forever)
+            http_threads.append(http_thread)
+            http_thread.start()
+        permitted = ' '.join(f'{host}:{server.server_port}' for server in http_servers for host in ('127.0.0.1', 'localhost'))
         server = None
         gates = []
         sshd_port = free_port()
@@ -390,7 +468,7 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password
 AllowTcpForwarding local
-PermitOpen 127.0.0.1:{http.server_port}
+PermitOpen {permitted}
 PermitTTY no
 X11Forwarding no
 AllowAgentForwarding no
@@ -427,7 +505,7 @@ ForceCommand /bin/true
                 # Qualify account/key/config before attributing auth failures to Ports.
                 result = subprocess.run(['ssh', '-F', str(config), f'ports-fixture-{index}', 'true'], capture_output=True, text=True, timeout=10)
                 assert result.returncode == 0, (result.stdout, result.stderr, (root/'sshd.log').read_text())
-            exercise(fixture, gates, http.server_port, payload)
+            exercise(fixture, gates, [server.server_port for server in http_servers], payloads)
         except BaseException:
             # No private keys, endpoint tokens or user files are emitted.
             for log in [root/'sshd.log', *(p/'port_forward_tui.background.log' for p in (root/'data'/'machines').glob('*'))]:
@@ -449,11 +527,12 @@ ForceCommand /bin/true
                         except subprocess.TimeoutExpired:
                             server.kill()
                             server.wait(timeout=5)
-                    http.shutdown()
-                    http.server_close()
-                    http_thread.join(timeout=3)
+                    for http, http_thread in zip(all_http_servers, http_threads):
+                        http.shutdown()
+                        http.server_close()
+                        http_thread.join(timeout=3)
             assert not listening(sshd_port), 'Owned sshd listener survived cleanup'
-            assert not http_thread.is_alive(), 'Owned HTTP thread survived cleanup'
+            assert not any(thread.is_alive() for thread in http_threads), 'Owned HTTP thread survived cleanup'
         print('PASS: public controller shutdown removes endpoints and owned SSH processes/listeners; fixture servers closed.', flush=True)
 
 

@@ -19,10 +19,13 @@ def main():
     mode.add_argument('--bundle', type=Path)
     mode.add_argument('--release', action='store_true')
     parser.add_argument('--version', default='0.9.1')
+    parser.add_argument('--channel', choices=('stable','beta'), default='stable')
     parser.add_argument('--ref')
     parser.add_argument('--with-path', action='store_true')
+    parser.add_argument('--powershell', choices=('powershell.exe','pwsh.exe'), default='powershell.exe')
     options = parser.parse_args()
-    if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?', options.version):
+    pattern = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)' + (r'-beta\.[1-9][0-9]*' if options.channel == 'beta' else '')
+    if not re.fullmatch(pattern, options.version):
         parser.error('Invalid release version')
     ref = options.ref or 'v'+options.version
     if not re.fullmatch(r'[A-Za-z0-9._/-]+', ref):
@@ -31,8 +34,13 @@ def main():
     bundle = options.bundle.resolve(strict=True) if options.bundle else None
     digest = hashlib.sha256(bundle.read_bytes()).hexdigest() if bundle else None
     flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    beta_user_path = None
+    if os.name == 'nt' and options.channel == 'beta':
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as key:
+            beta_user_path = winreg.QueryValueEx(key, 'Path')[0]
     with tempfile.TemporaryDirectory(prefix='ports-install-') as temporary:
-        root = Path(temporary)/"space \u6e2c\u8a66 and ' quote"
+        root = Path(temporary).resolve()/"space \u6e2c\u8a66 and ' quote"
         root.mkdir()
         installed, home, data = root/'app', root/'home', root/'data'
         home.mkdir()
@@ -40,6 +48,7 @@ def main():
             (home/profile).write_text('# existing '+profile+'\n')
         def install(expected=digest, destination=installed, success=True):
             env = dict(os.environ, PORTS_INSTALL_DIR=str(destination), PORTS_VERSION=options.version,
+                       PORTS_CHANNEL=options.channel,
                        PORTS_NO_PATH='0' if options.with_path else '1', HOME=str(home), SHELL='/bin/bash',
                        PYTHONHOME=str(root/'missing-python'), PYTHONPATH=str(root/'shadow'),
                        CONDA_PREFIX=str(root/'missing-conda'), VIRTUAL_ENV=str(root/'missing-venv'))
@@ -52,15 +61,16 @@ def main():
             if options.release:
                 extension = 'ps1' if os.name == 'nt' else 'sh'
                 url = f'https://raw.githubusercontent.com/brant92good/port-forward-tui/{ref}/install.{extension}'
-                command = (['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-Command',f'irm {url} | iex']
+                command = ([options.powershell,'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-Command',f'& ([scriptblock]::Create((irm {url}))) -Channel {options.channel}']
                            if os.name == 'nt' else ['sh','-c',f'curl -fsSL {url} | sh'])
             elif os.name == 'nt':
-                command = ['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(source/'install.ps1')]
+                command = [options.powershell,'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(source/'install.ps1'),'-Channel',options.channel]
             else:
                 command = ['sh',str(source/'install.sh')]
             result = subprocess.run(command,env=env,capture_output=True,encoding='utf-8',errors='replace',timeout=180 if options.release else 45,creationflags=flags)
             assert (result.returncode == 0) == success, (result.stdout,result.stderr)
-        executable = installed/('bin/ports.exe' if os.name == 'nt' else 'bin/ports')
+        name = 'ports-beta' if options.channel == 'beta' else 'ports'
+        executable = installed/'bin'/(name+('.exe' if os.name == 'nt' else ''))
         def run(*arguments):
             env = dict(os.environ,PYTHONHOME=str(root/'missing-python'),PYTHONPATH=str(root/'shadow'),CONDA_PREFIX=str(root/'missing-conda'),VIRTUAL_ENV=str(root/'missing-venv'))
             result = subprocess.run([str(executable),*arguments],env=env,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=15,creationflags=flags)
@@ -100,7 +110,15 @@ def main():
         install(destination=unowned,success=False)
         assert (unowned/'keep.txt').read_text() == 'other project'
         assert not (installed/'python').exists() and not (installed/'uv').exists()
-        if options.with_path:
+        if options.channel == 'beta':
+            assert not (installed/'bin'/('ports.exe' if os.name == 'nt' else 'ports')).exists()
+            for profile in ('.bashrc','.bash_login','.profile'):
+                assert (home/profile).read_text() == '# existing '+profile+'\n'
+            assert not (installed/'env').exists()
+            if os.name == 'nt':
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as key:
+                    assert winreg.QueryValueEx(key, 'Path')[0] == beta_user_path
+        elif options.with_path:
             if os.name == 'nt':
                 import winreg
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER,'Environment') as key:
@@ -116,7 +134,7 @@ def main():
                 assert (home/'.bashrc').read_text().count('# ports') == 1
                 assert (home/'.bash_login').read_text().count('# ports') == 1
         assert not list(data.rglob('endpoint.json')), 'Installer verification must not start controllers'
-        print(json.dumps({'ok':True,'mode':'HTTPS release' if options.release else 'local bundle','version':options.version,'sha256':binary_hash,
+        print(json.dumps({'ok':True,'mode':'HTTPS release' if options.release else 'local bundle','version':options.version,'channel':options.channel,'sha256':binary_hash,
                           'checks':['fresh install','update','checksum rejection','directory ownership','saved favorites','Unicode/quoted paths','polluted environment','PATH' if options.with_path else 'PATH unchanged']}))
 
 

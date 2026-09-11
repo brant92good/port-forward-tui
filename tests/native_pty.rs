@@ -248,6 +248,102 @@ fn foreground_quick_entry_resolves_saved_mapping_before_next_screen_poll() {
     view.close();
     assert!(!machine.directory.join("endpoint.json").exists());
 }
+#[test]
+fn proxy_form_edit_and_guidance_preserve_kind_without_http_or_ssh() {
+    let temp = tempfile::tempdir().unwrap();
+    let catalog = Catalog::new(temp.path()).unwrap();
+    let machine = catalog
+        .add("socks-fixture.invalid", "Proxy server", None, None)
+        .unwrap();
+    Store::load(&machine.directory)
+        .unwrap()
+        .save(vec![])
+        .unwrap();
+    // Both ports remain owned by this test. Production preflight must reject
+    // them before SSH spawn, while we exercise the real save/edit UI path.
+    let first = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let second = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    first.set_nonblocking(true).unwrap();
+    second.set_nonblocking(true).unwrap();
+    let first_port = first.local_addr().unwrap().port();
+    let second_port = second.local_addr().unwrap().port();
+    let mut view = Session::with_mode(temp.path(), &machine.id, true);
+    view.expect("BETA");
+    view.expect(env!("CARGO_PKG_VERSION"));
+    view.send("p");
+    view.expect("Add SOCKS5 proxy");
+    view.expect("1080");
+    view.send("\x1b");
+    view.expect("Saved connections");
+    assert!(
+        Store::load(&machine.directory)
+            .unwrap()
+            .settings
+            .forwards
+            .is_empty()
+    );
+    view.send("p");
+    view.expect("Add SOCKS5 proxy");
+    view.send(&format!("\x01{first_port}\tProxy API\r"));
+    view.wait_for(|| {
+        Store::load(&machine.directory)
+            .unwrap()
+            .settings
+            .forwards
+            .iter()
+            .any(|rule| rule.name == "Proxy API")
+    });
+    view.select_last("Proxy API");
+    view.expect_row("Proxy server", "ERROR");
+    let proxy = Store::load(&machine.directory).unwrap().settings.forwards[0].clone();
+    assert!(proxy.is_socks());
+    assert_eq!(proxy.remote_port, None);
+    assert_eq!(proxy.local_port, first_port);
+    let before_guidance = std::fs::read(machine.directory.join("forwards.json")).unwrap();
+    for key in ["b", "t"] {
+        view.send(key);
+        view.expect("SOCKS5 client setup");
+        view.expect("curl --socks5-hostname");
+        view.send("\r");
+        view.expect("Saved connections");
+    }
+    assert_eq!(
+        std::fs::read(machine.directory.join("forwards.json")).unwrap(),
+        before_guidance
+    );
+    assert!(matches!(first.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock));
+    view.send("e");
+    view.expect("Edit favorite");
+    view.expect("SOCKS5 proxy");
+    view.expect("Chosen by each proxy request");
+    view.send(&format!("\x01{second_port}\t\x01Edited proxy\t \r"));
+    view.expect_edit_closed();
+    view.wait_for(|| {
+        auto_open::Preferences::load(&machine.directory)
+            .unwrap()
+            .enabled(&proxy.id)
+    });
+    let saved = Store::load(&machine.directory).unwrap();
+    assert_eq!(saved.settings.version, 2);
+    assert_eq!(saved.settings.forwards.len(), 1);
+    let edited = &saved.settings.forwards[0];
+    assert_eq!(edited.id, proxy.id);
+    assert!(edited.is_socks());
+    assert_eq!(edited.remote_port, None);
+    assert_eq!(edited.local_port, second_port);
+    assert_eq!(edited.name, "Edited proxy");
+    view.close();
+    let mut reopened = Session::with_mode(temp.path(), &machine.id, true);
+    reopened.expect("Edited proxy");
+    reopened.expect("Open automatically: on");
+    reopened.expect_row("Proxy server", "ERROR");
+    reopened.close();
+    assert!(
+        matches!(second.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+    );
+    assert!(!machine.directory.join("endpoint.json").exists());
+}
+
 impl Drop for Session {
     fn drop(&mut self) {
         if !matches!(self.child.try_wait(), Ok(Some(_))) {
@@ -393,7 +489,7 @@ fn keyboard_form_multihost_concurrent_view_and_detach() {
         .into_iter()
         .find(|r| r.name == "PTY API")
         .unwrap();
-    assert_eq!((saved.local_port, saved.remote_port), (18009, 9009));
+    assert_eq!((saved.local_port, saved.remote_port), (18009, Some(9009)));
     first.wait_for(|| {
         background::exchange(
             &machine.directory,
@@ -1064,7 +1160,7 @@ fn automatic_dispatch_rechecks_preferences_after_blocked_controller_preparation(
             port_forward_tui::store::write_json(&prepared, &preferences).unwrap();
         } else {
             if change == "favorite" {
-                store.settings.forwards[0].remote_port += 1;
+                *store.settings.forwards[0].remote_port.as_mut().unwrap() += 1;
             } else {
                 store.settings.host = "changed.invalid".into();
             }
@@ -1158,8 +1254,10 @@ fn rapid_manual_stops_are_queued_and_automatic_failures_remain_inspectable() {
 
 #[cfg(windows)]
 #[test]
-#[ignore = "Explicit developer Python path; mandatory separate Windows CI step"]
+#[ignore = "Stable protocol-1 only; isolated beta qualification is scripts/check_beta_compat.py"]
 fn native_new_view_automatic_open_uses_legacy_python_controller() {
+    // Historical stable migration reference, not a beta interoperability test.
+    // The beta intentionally refuses this protocol-1 controller before writes.
     let python = std::path::PathBuf::from(
         std::env::var_os("PORTS_LEGACY_PYTHON")
             .expect("Set PORTS_LEGACY_PYTHON to the developer Python executable"),

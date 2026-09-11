@@ -54,7 +54,8 @@ pub trait Backend: Send {
     fn listeners(&mut self, pids: &[u32]) -> Result<Listeners>;
 }
 
-pub fn ssh_arguments(settings: &Settings, rule: &Forward) -> Vec<String> {
+pub fn ssh_arguments(settings: &Settings, rule: &Forward) -> Result<Vec<String>> {
+    rule.validate()?;
     let mut args = Vec::new();
     if let Some(port) = settings.ssh_port {
         args.extend(["-p".into(), port.to_string()]);
@@ -78,15 +79,19 @@ pub fn ssh_arguments(settings: &Settings, rule: &Forward) -> Vec<String> {
     ] {
         args.extend(["-o".into(), option.into()]);
     }
-    args.extend([
-        "-L".into(),
-        format!(
-            "127.0.0.1:{}:127.0.0.1:{}",
-            rule.local_port, rule.remote_port
-        ),
-        settings.host.clone(),
-    ]);
-    args
+    if rule.is_socks() {
+        args.extend(["-D".into(), format!("127.0.0.1:{}", rule.local_port)]);
+    } else {
+        let remote = rule
+            .remote_port
+            .context("A port forward needs a remote port.")?;
+        args.extend([
+            "-L".into(),
+            format!("127.0.0.1:{}:127.0.0.1:{remote}", rule.local_port),
+        ]);
+    }
+    args.push(settings.host.clone());
+    Ok(args)
 }
 
 pub fn ssh_executable() -> Result<PathBuf> {
@@ -170,7 +175,7 @@ impl Backend for NativeBackend {
         check_local_port(rule.local_port)?;
         Ok(Box::new(OwnedSsh::spawn(
             &self.executable,
-            &ssh_arguments(settings, rule),
+            &ssh_arguments(settings, rule)?,
         )?))
     }
     fn listeners(&mut self, pids: &[u32]) -> Result<Listeners> {
@@ -381,7 +386,7 @@ mod tests {
             ..Settings::default()
         };
         let rule = Forward::new(18000, 8000, "Web").unwrap();
-        let args = ssh_arguments(&settings, &rule);
+        let args = ssh_arguments(&settings, &rule).unwrap();
         assert_eq!(
             &args[..4],
             ["-p", "2222", "-F", "C:/path with spaces/config"]

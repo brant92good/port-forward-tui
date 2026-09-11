@@ -1,5 +1,6 @@
 pub mod auto_open;
 pub mod background;
+pub mod channel;
 pub mod cli;
 pub mod connection_list;
 pub mod forward_form;

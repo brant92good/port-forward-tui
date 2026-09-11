@@ -10,7 +10,9 @@ $portsStage = Join-Path $portsRoot ('artifacts\package-' + [Guid]::NewGuid().ToS
 [IO.File]::Copy([IO.Path]::GetFullPath($Binary),(Join-Path $portsStage 'ports.exe'))
 [IO.File]::Copy((Join-Path $portsRoot 'LICENSE'),(Join-Path $portsStage 'LICENSE.txt'))
 [IO.File]::Copy((Join-Path $portsRoot 'docs\licenses\THIRD_PARTY_NOTICES.txt'),(Join-Path $portsStage 'THIRD_PARTY_NOTICES.txt'))
-if ((& (Join-Path $portsStage 'ports.exe') --version) -ne 'ports 0.9.1' -or $LASTEXITCODE -ne 0) { throw 'Expected Ports 0.9.1.' }
+$portsCargo = [IO.File]::ReadAllText((Join-Path $portsRoot 'Cargo.toml'))
+$portsExpectedVersion = [regex]::Match($portsCargo,'(?m)^version = "([^"]+)"').Groups[1].Value
+if (-not $portsExpectedVersion -or (& (Join-Path $portsStage 'ports.exe') --version) -ne "ports $portsExpectedVersion" -or $LASTEXITCODE -ne 0) { throw "Expected Ports $portsExpectedVersion." }
 function Get-PortsPackageHash([string]$Path) {
     $portsHasher = [Security.Cryptography.SHA256]::Create(); $portsInput = [IO.File]::OpenRead($Path)
     try { ([BitConverter]::ToString($portsHasher.ComputeHash($portsInput))).Replace('-','').ToLowerInvariant() }

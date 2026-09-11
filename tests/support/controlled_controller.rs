@@ -1,4 +1,4 @@
-//! Test-only protocol-1 peer for deterministic blocked-preparation/Stop tests.
+//! Test-only protocol-2 peer for deterministic blocked-preparation/Stop tests.
 //! No process or SSH is spawned. Production controller/process tests are separate.
 use port_forward_tui::{
     background::Endpoint,
@@ -57,7 +57,7 @@ impl Peer {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
         let endpoint = Endpoint {
-            protocol: 1,
+            protocol: 2,
             pid: std::process::id(),
             port: listener.local_addr().unwrap().port(),
             token: format!("{}{}", store::new_id(), store::new_id()),
@@ -148,7 +148,7 @@ impl Peer {
                 let response = if failed {
                     json!({"ok":false,"error":"Fixture rejected this automatic start"})
                 } else {
-                    json!({"ok":true,"protocol":1,"pid":endpoint.pid,"host":settings.host,
+                    json!({"ok":true,"protocol":2,"pid":endpoint.pid,"host":settings.host,
                         "forwards":settings.forwards,"states":*current.lock().unwrap(),"details":{},"running":[]})
                 };
                 let result = writeln!(stream, "{response}");

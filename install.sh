@@ -19,14 +19,34 @@ add_path_line() {
 }
 main() {
     version=${PORTS_VERSION:-0.9.1}
-    case "$version" in ''|*[!A-Za-z0-9.-]*) printf '%s\n' 'Invalid release version.' >&2; return 1;; esac
-    install_root=${PORTS_INSTALL_DIR:-${XDG_DATA_HOME:-"$HOME/.local/share"}/ports-install}
+    channel=${PORTS_CHANNEL:-stable}
+    case "$channel" in
+        stable) pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; command_name=ports; owner=port-forward-tui; default_dir=ports-install;;
+        beta) pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-beta\.[1-9][0-9]*$'; command_name=ports-beta; owner=port-forward-tui-beta; default_dir=ports-beta-install;;
+        *) printf '%s\n' 'Unknown release channel.' >&2; return 1;;
+    esac
+    # Reject embedded newlines as well as nonmatching versions; never resolve latest.
+    [ "$(printf '%s' "$version" | tr -d '\r\n')" = "$version" ] && printf '%s\n' "$version" | grep -Eq "$pattern" || { printf '%s\n' 'Use an exact stable version or explicit beta channel with x.y.z-beta.N.' >&2; return 1; }
+    install_root=${PORTS_INSTALL_DIR:-${XDG_DATA_HOME:-"$HOME/.local/share"}/$default_dir}
     case "$install_root" in /*) ;; *) printf '%s\n' 'PORTS_INSTALL_DIR must be absolute.' >&2; return 1;; esac
+    if [ "$channel" = beta ]; then
+        stable_root=${XDG_DATA_HOME:-"$HOME/.local/share"}/ports-install
+        case "$install_root" in "$stable_root"|"$stable_root"/*|*/../*|*/./*|*/..|*/.|*//*) printf '%s\n' 'Beta requires a separate canonical installation path.' >&2; return 1;; esac
+        inspect=$install_root
+        while [ -n "$inspect" ]; do
+            [ ! -L "$inspect" ] || { printf '%s\n' 'Beta install paths must not traverse symbolic links.' >&2; return 1; }
+            [ "$inspect" != / ] || break
+            inspect=${inspect%/*}; [ -n "$inspect" ] || inspect=/
+        done
+    fi
     if [ -d "$install_root" ] && [ ! -f "$install_root/.ports-installer" ] && [ -n "$(ls -A "$install_root")" ]; then
         printf '%s\n' "Choose an empty install directory: $install_root contains other files." >&2; return 1
     fi
-    if [ -f "$install_root/.ports-installer" ] && [ "$(cat "$install_root/.ports-installer")" != port-forward-tui ]; then
-        printf '%s\n' 'This install directory belongs to another application.' >&2; return 1
+    if [ -f "$install_root/.ports-installer" ] && [ "$(cat "$install_root/.ports-installer")" != "$owner" ]; then
+        printf '%s\n' 'This install directory belongs to another application or release channel.' >&2; return 1
+    fi
+    if [ "$channel" = beta ] && { [ -L "$install_root/bin" ] || [ -L "$install_root/version" ] || [ -L "$install_root/.ports-installer" ]; }; then
+        printf '%s\n' 'Beta installation files must not traverse symbolic links.' >&2; return 1
     fi
     case "$(uname -s)/$(uname -m)" in
         Darwin/arm64) target=aarch64-apple-darwin;;
@@ -72,6 +92,10 @@ main() {
     done
     chmod 755 "$stage/ports"
     [ "$("$stage/ports" --version)" = "ports $version" ] || { printf '%s\n' 'The downloaded app could not run or has the wrong version.' >&2; return 1; }
+    if [ "$channel" = beta ]; then
+        mv "$stage/ports" "$stage/$command_name"
+        files="$command_name LICENSE.txt THIRD_PARTY_NOTICES.txt"
+    fi
     mkdir -p "$install_root/bin"
     mkdir "$stage/previous"
     for file in $files; do
@@ -80,7 +104,7 @@ main() {
             cp -p "$install_root/bin/$file" "$stage/previous/$file"
         fi
     done
-    if [ -f "$install_root/bin/ports" ]; then cp -p "$install_root/bin/ports" "$install_root/bin/ports.previous"; fi
+    if [ -f "$install_root/bin/$command_name" ]; then cp -p "$install_root/bin/$command_name" "$install_root/bin/$command_name.previous"; fi
     changed=''
     for file in $files; do
         if ! mv -f "$stage/$file" "$install_root/bin/$file"; then
@@ -92,9 +116,9 @@ main() {
         fi
         changed="$file $changed"
     done
-    printf '%s\n' port-forward-tui > "$install_root/.ports-installer"
+    printf '%s\n' "$owner" > "$install_root/.ports-installer"
     printf '%s\n' "$version" > "$install_root/version"
-    if [ "${PORTS_NO_PATH:-0}" != 1 ]; then
+    if [ "$channel" = stable ] && [ "${PORTS_NO_PATH:-0}" != 1 ]; then
         # Generate one sourceable PATH fragment; do not alter unrelated shell setup.
         quoted=$(printf '%s' "$install_root/bin" | sed "s/'/'\\\\''/g")
         printf "case :\"\${PATH-}\": in *:'%s':*) ;; *) export PATH='%s':\"\${PATH-}\";; esac\n" "$quoted" "$quoted" > "$install_root/env"
@@ -116,8 +140,9 @@ main() {
         esac
         if [ -n "$profile" ]; then add_path_line "$profile"; fi
     fi
-    printf '\n%s\n' "Installed Ports $version. Run ports."
-    printf 'Command: %s/bin/ports\n' "$install_root"
+    printf '\n%s\n' "Installed Ports $version ($channel)."
+    printf 'Command: %s/bin/%s\n' "$install_root" "$command_name"
+    if [ "$channel" = beta ]; then printf '%s\n' 'BETA: invoke the exact ports-beta path above; PATH and the stable ports command were preserved.'; fi
     printf '%s\n' 'Open a new terminal if the command is not found. Press I to import hosts or A to add one.'
 }
 main "$@"

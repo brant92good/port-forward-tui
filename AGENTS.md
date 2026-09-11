@@ -15,11 +15,14 @@ Installation downloads compiled binaries and does not require a host, Python,
 Cargo or Git. OpenSSH is the transport. Follow the README installer commands;
 add/import machines afterward. The old Python source and PowerShell entry points
 remain for migration compatibility; use the compiled command for native work.
-See docs/automation.md for schema version 1 and exit codes 0/1/2.
+See docs/automation.md for beta JSON schema version 2 and exit codes 0/1/2.
 
 ## Invariants
 
-- Keep saved schemas, IDs, per-device paths and protocol-1 compatibility.
+- Stable keeps schema/protocol 1. This isolated beta uses protocol 2 and a
+  separate beta data marker/directory; never share a stable controller or migrate
+  its live data. Keep local-only row shapes and IDs; SOCKS promotes only beta
+  files to sticky schema 2. A future stable promotion needs its own compatibility gate.
 - Preserve concurrent edits through the controller; stale edits/deletes must fail.
 - A/quick entry save and connect. E saves; active edits restart the changed mapping.
 - E also edits Open automatically. Checkbox-only changes never call the

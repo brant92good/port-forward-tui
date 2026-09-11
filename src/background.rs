@@ -1,4 +1,4 @@
-//! Compatible protocol-1 controller. Views may come and go; this process owns SSH.
+//! Isolated beta protocol-2 controller. Views may come and go; this process owns SSH.
 use crate::{
     forwarding::Manager,
     process::{Backend, NativeBackend},
@@ -21,7 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const PROTOCOL: u8 = 1;
+pub const PROTOCOL: u8 = 2;
 const MAX_REQUEST: usize = 65_536;
 const MAX_RESPONSE: usize = 2 * 1024 * 1024;
 
@@ -31,6 +31,25 @@ pub struct Endpoint {
     pub pid: u32,
     pub port: u16,
     pub token: String,
+}
+
+fn endpoint(directory: &Path) -> Result<Endpoint> {
+    let bytes =
+        fs::read(directory.join("endpoint.json")).context("No background manager is available.")?;
+    ensure!(bytes.len() <= 8192, "Invalid controller endpoint.");
+    let endpoint: Endpoint = serde_json::from_slice(&bytes)?;
+    ensure!(
+        endpoint.protocol == PROTOCOL && endpoint.port > 0 && endpoint.token.len() == 64,
+        "Incompatible controller endpoint. Ports BETA needs its own data directory; the existing manager was not restarted."
+    );
+    Ok(endpoint)
+}
+
+pub(crate) fn check_existing_endpoint(directory: &Path) -> Result<()> {
+    if directory.join("endpoint.json").exists() {
+        endpoint(directory)?;
+    }
+    Ok(())
 }
 
 fn read_line(stream: &mut TcpStream, limit: usize, timeout: Duration) -> Result<Vec<u8>> {
@@ -62,14 +81,7 @@ pub fn exchange(
     arguments: Value,
     timeout: Duration,
 ) -> Result<Value> {
-    let bytes =
-        fs::read(directory.join("endpoint.json")).context("No background manager is available.")?;
-    ensure!(bytes.len() <= 8192, "Invalid controller endpoint.");
-    let endpoint: Endpoint = serde_json::from_slice(&bytes)?;
-    ensure!(
-        endpoint.protocol == PROTOCOL && endpoint.port > 0 && endpoint.token.len() == 64,
-        "Incompatible controller endpoint."
-    );
+    let endpoint = endpoint(directory)?;
     let address = SocketAddr::from((Ipv4Addr::LOCALHOST, endpoint.port));
     let mut connection = TcpStream::connect_timeout(&address, timeout.min(Duration::from_secs(2)))?;
     connection.set_read_timeout(Some(timeout))?;
@@ -123,7 +135,8 @@ impl<B: Backend> Supervisor<B> {
             .collect();
         json!({"ok":true,"protocol":PROTOCOL,"pid":std::process::id(),
             "host":self.manager.settings.host,"ssh_port":self.manager.settings.ssh_port,"ssh_config":self.manager.settings.ssh_config,
-            "capabilities":["shared_favorites","auto_reconnect"],"forwards":self.store.settings.forwards,
+            "channel":crate::channel::CHANNEL,"version":env!("CARGO_PKG_VERSION"),
+            "capabilities":["shared_favorites","auto_reconnect","socks_proxy"],"forwards":self.store.settings.forwards,
             "running":self.manager.running(),"states":states,"details":details})
     }
     pub fn local(&mut self, command: &str, arguments: Value) -> Result<Value> {
@@ -147,7 +160,7 @@ impl<B: Backend> Supervisor<B> {
         ensure!(different == 0, "Unauthorized");
         ensure!(
             request.get("protocol") == Some(&json!(PROTOCOL)),
-            "Incompatible background protocol; restart the background manager."
+            "Incompatible background protocol. Use the matching channel and its separate data directory."
         );
         Ok(())
     }
@@ -219,11 +232,7 @@ impl<B: Backend> Supervisor<B> {
                     .settings
                     .forwards
                     .iter()
-                    .find(|saved| {
-                        saved.id != rule.id
-                            && saved.local_port == rule.local_port
-                            && saved.remote_port == rule.remote_port
-                    })
+                    .find(|saved| saved.id != rule.id && saved.same_mapping(&rule))
                     .cloned();
                 if let Some(duplicate) = duplicate {
                     ensure!(
@@ -317,6 +326,8 @@ impl Drop for EndpointGuard {
 
 pub fn serve(directory: &Path) -> Result<()> {
     let directory = store::absolute(directory)?;
+    check_existing_endpoint(&directory)?;
+    crate::channel::prepare(&directory)?;
     let _lock = Lock::acquire(&directory, "daemon.lock", Duration::ZERO)?;
     let store = Store::load(&directory)?;
     store::host(&store.settings.host)?;
@@ -424,6 +435,8 @@ pub fn serve(directory: &Path) -> Result<()> {
 
 pub fn launch(directory: &Path) -> Result<crate::process::DaemonChild> {
     let directory = store::absolute(directory)?;
+    check_existing_endpoint(&directory)?;
+    crate::channel::prepare(&directory)?;
     fs::create_dir_all(&directory)?;
     let path = directory.join("port_forward_tui.background.log");
     if path.metadata().is_ok_and(|data| data.len() > 256 * 1024) {
@@ -441,6 +454,8 @@ pub fn launch(directory: &Path) -> Result<crate::process::DaemonChild> {
 }
 
 pub fn ensure_daemon(directory: &Path) -> Result<Value> {
+    crate::channel::validate_directory(directory)?;
+    check_existing_endpoint(directory)?;
     if let Ok(snapshot) = exchange(directory, "status", json!({}), Duration::from_secs(2)) {
         return Ok(snapshot);
     }
@@ -453,6 +468,7 @@ pub fn ensure_daemon(directory: &Path) -> Result<Value> {
     let mut child = launch(directory)?;
     let deadline = Instant::now() + Duration::from_secs(8);
     while Instant::now() < deadline {
+        check_existing_endpoint(directory)?;
         if let Ok(snapshot) = exchange(directory, "status", json!({}), Duration::from_millis(500)) {
             // Reap our losing launcher if it exited. Never terminate the winner.
             let _ = child.try_wait();
@@ -538,6 +554,49 @@ mod tests {
         request["protocol"] = json!(PROTOCOL);
         request["command"] = json!(command);
         request
+    }
+    #[test]
+    fn proxy_and_local_rows_share_ids_cas_and_duplicate_rules_without_type_confusion() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::load(temp.path()).unwrap();
+        store.settings.host = "fixture".into();
+        store.save(vec![]).unwrap();
+        let mut supervisor = Supervisor::new(store, NeverSsh);
+        let local = Forward::new(1080, 1080, "Local").unwrap();
+        let proxy = Forward::socks(1080, "Proxy").unwrap();
+        for rule in [&local, &proxy] {
+            supervisor.local("upsert", json!({"rule":rule})).unwrap();
+        }
+        assert_eq!(supervisor.store.settings.forwards.len(), 2);
+        assert_eq!(supervisor.store.settings.version, 2);
+        let duplicate = Forward::socks(1080, "Another name").unwrap();
+        let result = supervisor
+            .local("upsert", json!({"rule":duplicate}))
+            .unwrap();
+        assert_eq!(result["rule_id"], proxy.id);
+        assert!(supervisor.manager.running().is_empty());
+        let mut edited = proxy.clone();
+        edited.name = "Edited".into();
+        supervisor
+            .local("upsert", json!({"rule":edited,"expected":proxy}))
+            .unwrap();
+        let bytes = fs::read(supervisor.store.path()).unwrap();
+        assert!(
+            supervisor
+                .local("upsert", json!({"rule":proxy,"expected":proxy}))
+                .is_err()
+        );
+        assert!(
+            supervisor
+                .local("delete", json!({"rule_id":proxy.id,"expected":proxy}))
+                .is_err()
+        );
+        assert_eq!(fs::read(supervisor.store.path()).unwrap(), bytes);
+        supervisor
+            .local("delete", json!({"rule_id":edited.id,"expected":edited}))
+            .unwrap();
+        assert_eq!(supervisor.store.settings.version, 2);
+        assert_eq!(supervisor.store.settings.forwards, vec![local]);
     }
     #[test]
     fn stale_concurrent_edits_and_deletes_cannot_overwrite_newer_favorites() {

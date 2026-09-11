@@ -133,6 +133,7 @@ impl Catalog {
         }
         let config = config.map(|p| p.to_string_lossy().into_owned());
         let id = machine_id(&target, ssh_port, config.as_deref())?;
+        crate::channel::prepare(&self.directory)?;
         let _lock = Lock::acquire(&self.directory, "catalog.lock", Duration::from_secs(3))?;
         if let Some(machine) = self.list()?.into_iter().find(|m| m.id == id) {
             return Ok(machine);

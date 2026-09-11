@@ -66,6 +66,7 @@ impl Preferences {
 /// take daemon.lock: old and native controllers may be using them right now.
 pub fn set(directory: &Path, id: &str, enabled: bool) -> Result<()> {
     ensure!(store::valid_id(id), "Invalid favorite ID.");
+    crate::channel::prepare(directory)?;
     let _lock = Lock::acquire(directory, "forward-options.lock", Duration::from_secs(2))?;
     let store = Store::load(directory)?;
     ensure!(
@@ -87,6 +88,7 @@ pub fn set(directory: &Path, id: &str, enabled: bool) -> Result<()> {
 /// Edit-form compare-and-merge. The expected forward is the NEW saved value
 /// after a combined edit; the option snapshot still comes from opening the form.
 pub fn set_checked(directory: &Path, expected: &Forward, old: bool, enabled: bool) -> Result<()> {
+    crate::channel::prepare(directory)?;
     let _lock = Lock::acquire(directory, "forward-options.lock", Duration::from_secs(2))?;
     let current = Store::load(directory)?;
     ensure!(
@@ -278,7 +280,7 @@ mod tests {
         assert!(item.validate().is_err());
         store.settings.host = "fixture.invalid".into();
         let mut changed = rule.clone();
-        changed.remote_port += 1;
+        changed.remote_port = changed.remote_port.map(|port| port + 1);
         store.save(vec![changed]).unwrap();
         assert!(item.validate().is_err());
         store.save(Vec::new()).unwrap();

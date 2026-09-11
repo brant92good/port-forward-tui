@@ -126,7 +126,12 @@ impl Model {
         };
         Self {
             inputs: [
-                Input::new(previous.remote_port.to_string()),
+                Input::new(
+                    previous
+                        .remote_port
+                        .map(|port| port.to_string())
+                        .unwrap_or_default(),
+                ),
                 Input::new(previous.local_port.to_string()),
                 Input::new(previous.name.clone()),
             ],
@@ -139,13 +144,22 @@ impl Model {
         }
     }
     fn request(&self) -> Result<Request> {
-        let remote = store::port(self.inputs[0].value.trim())?;
-        let local = if self.inputs[1].value.trim().is_empty() {
-            remote
+        let mut rule = if self.previous.is_socks() {
+            let local = if self.inputs[1].value.trim().is_empty() {
+                1080
+            } else {
+                store::port(self.inputs[1].value.trim())?
+            };
+            Forward::socks(local, &self.inputs[2].value)?
         } else {
-            store::port(self.inputs[1].value.trim())?
+            let remote = store::port(self.inputs[0].value.trim())?;
+            let local = if self.inputs[1].value.trim().is_empty() {
+                remote
+            } else {
+                store::port(self.inputs[1].value.trim())?
+            };
+            Forward::new(local, remote, &self.inputs[2].value)?
         };
-        let mut rule = Forward::new(local, remote, &self.inputs[2].value)?;
         rule.id = self.previous.id.clone();
         Ok(Request {
             previous: self.previous.clone(),
@@ -159,6 +173,14 @@ impl Model {
             self.previous = saved.clone();
         }
         self.error = outcome.notice.clone();
+    }
+    fn move_selection(&mut self, backwards: bool) {
+        loop {
+            self.selected = (self.selected + if backwards { 3 } else { 1 }) % 4;
+            if self.selected != 0 || !self.previous.is_socks() {
+                break;
+            }
+        }
     }
 }
 
@@ -177,10 +199,29 @@ pub fn render(frame: &mut ratatui::Frame, model: &Model, machine: &str, saving: 
     ])
     .margin(1)
     .split(area);
-    frame.render_widget(Paragraph::new(format!("Server: {machine}")), rows[0]);
+    frame.render_widget(
+        Paragraph::new(format!(
+            "Server: {machine} · {}",
+            if model.previous.is_socks() {
+                "SOCKS5 proxy"
+            } else {
+                "Fixed forward"
+            }
+        )),
+        rows[0],
+    );
+    let socks = model.previous.is_socks();
     for (index, label) in [
-        "App port on server",
-        "Port on this computer (blank uses same)",
+        if socks {
+            "Destination"
+        } else {
+            "App port on server"
+        },
+        if socks {
+            "Proxy port on this computer (blank uses 1080)"
+        } else {
+            "Port on this computer (blank uses same)"
+        },
         "Name",
     ]
     .iter()
@@ -188,13 +229,19 @@ pub fn render(frame: &mut ratatui::Frame, model: &Model, machine: &str, saving: 
     {
         let marker = if model.selected == index { ">" } else { " " };
         frame.render_widget(
-            Paragraph::new(format!("{marker} {label}\n  {}", model.inputs[index].value)).style(
-                Style::default().fg(if model.selected == index {
-                    ACCENT
+            Paragraph::new(format!(
+                "{marker} {label}\n  {}",
+                if socks && index == 0 {
+                    "Chosen by each proxy request"
                 } else {
-                    MUTED
-                }),
-            ),
+                    &model.inputs[index].value
+                }
+            ))
+            .style(Style::default().fg(if model.selected == index {
+                ACCENT
+            } else {
+                MUTED
+            })),
             rows[index + 1],
         );
     }
@@ -285,8 +332,8 @@ pub fn edit(
                 }
                 _ if saving => {}
                 Some(Event::Key(key)) => match key.code {
-                    KeyCode::Tab | KeyCode::Down => model.selected = (model.selected + 1) % 4,
-                    KeyCode::BackTab | KeyCode::Up => model.selected = (model.selected + 3) % 4,
+                    KeyCode::Tab | KeyCode::Down => model.move_selection(false),
+                    KeyCode::BackTab | KeyCode::Up => model.move_selection(true),
                     KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right if model.selected == 3 => {
                         if model.original_auto.is_some() {
                             model.enabled = !model.enabled;
@@ -309,4 +356,67 @@ pub fn edit(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod socks_tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn proxy_editor_skips_remote_field_and_preserves_kind_identity_and_options() {
+        let temp = tempfile::tempdir().unwrap();
+        let proxy = Forward::socks(1080, "Proxy").unwrap();
+        Store::load(temp.path())
+            .unwrap()
+            .save(vec![proxy.clone()])
+            .unwrap();
+        let mut model = Model::new(temp.path(), proxy.clone());
+        assert_eq!(model.selected, 1);
+        model.move_selection(true);
+        assert_eq!(model.selected, 3);
+        model.move_selection(false);
+        assert_eq!(model.selected, 1);
+        model.enabled = true;
+        let request = model.request().unwrap();
+        assert_eq!(request.rule, proxy);
+        let outcome = save(temp.path(), request, |_, _| {
+            panic!("Checkbox-only edit must not call controller")
+        });
+        assert!(outcome.success, "{}", outcome.notice);
+        assert!(Preferences::load(temp.path()).unwrap().enabled(&proxy.id));
+        assert!(!temp.path().join("endpoint.json").exists());
+        model.inputs[1] = Input::new("2080");
+        model.inputs[2] = Input::new("Changed proxy");
+        let request = model.request().unwrap();
+        assert!(request.rule.is_socks());
+        assert_eq!(request.rule.remote_port, None);
+        assert_eq!(request.rule.local_port, 2080);
+        assert_eq!(request.rule.id, proxy.id);
+    }
+
+    #[test]
+    fn proxy_editor_small_view_has_mode_local_port_and_auto_control() {
+        let temp = tempfile::tempdir().unwrap();
+        let model = Model::new(temp.path(), Forward::socks(1080, "Proxy").unwrap());
+        let mut terminal = Terminal::new(TestBackend::new(64, 18)).unwrap();
+        terminal
+            .draw(|frame| render(frame, &model, "Fixture", false))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text = (0..18)
+            .map(|y| (0..64).map(|x| buffer[(x, y)].symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        for expected in [
+            "SOCKS5 proxy",
+            "Chosen by each proxy request",
+            "1080",
+            "Open automatically",
+            "Enter saves",
+        ] {
+            assert!(text.contains(expected), "Missing {expected}: {text}");
+        }
+        assert!(!text.contains("App port on server"));
+    }
 }

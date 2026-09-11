@@ -141,9 +141,9 @@ pub fn render_named(
         return;
     }
     let labels = if inner.width >= 64 {
-        vec!["NAME", "STATE", "AUTO", "LOCAL → REMOTE"]
+        vec!["NAME", "STATE", "AUTO", "LOCAL / DEST"]
     } else if inner.width >= 26 {
-        vec!["NAME", "STATE", "LOCAL→REMOTE"]
+        vec!["NAME", "STATE", "LOCAL/DEST"]
     } else {
         vec!["NAME"]
     };
@@ -191,17 +191,31 @@ pub fn render_named(
                         if let Some(label) = names.and_then(|names| names.label(entry)) {
                             label.to_owned()
                         } else if rule.name.is_empty() {
-                            format!("Port {}", rule.remote_port)
+                            if rule.is_socks() {
+                                "SOCKS5 proxy".into()
+                            } else {
+                                format!("Port {}", rule.remote_port.unwrap_or_default())
+                            }
                         } else {
                             rule.name.clone()
                         }
                     },
                 );
                 let mapping = entry.rule.as_ref().map_or_else(String::new, |rule| {
-                    if inner.width >= 42 {
-                        format!("{} → {}", rule.local_port, rule.remote_port)
+                    if rule.is_socks() {
+                        format!("{} SOCKS5", rule.local_port)
+                    } else if inner.width >= 42 {
+                        format!(
+                            "{} → {}",
+                            rule.local_port,
+                            rule.remote_port.unwrap_or_default()
+                        )
                     } else {
-                        format!("{}→{}", rule.local_port, rule.remote_port)
+                        format!(
+                            "{}→{}",
+                            rule.local_port,
+                            rule.remote_port.unwrap_or_default()
+                        )
                     }
                 });
                 let mut cells = vec![Cell::from(format!(
@@ -261,7 +275,8 @@ mod tests {
                 id: format!("{machine}-{name}"),
                 name: name.into(),
                 local_port: 18000,
-                remote_port: 8000,
+                remote_port: Some(8000),
+                kind: crate::store::ForwardKind::Local,
             }),
             state: "ON".into(),
             details: String::new(),
@@ -440,5 +455,17 @@ mod tests {
     fn blank_legacy_name_uses_only_the_existing_port_fallback() {
         let rows = vec![entry("one", "")];
         assert!(selected_line(&draw(&rows, 0, 72, 7)).contains("Port 8000"));
+    }
+
+    #[test]
+    fn proxy_rows_identify_socks_without_a_fake_remote_port() {
+        let mut row = entry("one", "Proxy");
+        row.rule = Some(Forward::socks(1080, "Proxy").unwrap());
+        let text = selected_line(&draw(&[row], 0, 64, 8));
+        assert!(
+            text.contains("Proxy") && text.contains("1080 SOCKS5"),
+            "{text}"
+        );
+        assert!(!text.contains('→'));
     }
 }

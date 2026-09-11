@@ -32,6 +32,15 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
+      - name: Validate release version, channel and immutable tag
+        id: release
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            python scripts/release_metadata.py --tag "$GITHUB_REF_NAME" --github-output "$GITHUB_OUTPUT"
+          else
+            python scripts/release_metadata.py --github-output "$GITHUB_OUTPUT"
+          fi
       - name: Build toolchain
         run: rustup toolchain install 1.94.0 --profile minimal --component clippy --component rustfmt --target ${{ matrix.target }}
       - name: Linux static linker and SSH test tools
@@ -67,16 +76,24 @@ jobs:
           python scripts/test_collect_licenses.py
           python scripts/collect_licenses.py --check
           python scripts/check_package_notices.py
+          python scripts/check_installer_channels.py
+          python scripts/test_release_metadata.py
+      - name: PowerShell 7 channel installer fixtures
+        if: runner.os == 'Windows'
+        run: python scripts/check_installer_channels.py --powershell pwsh.exe
       - run: cargo +1.94.0 build --release --locked --target ${{ matrix.target }}
       - name: Historical/native controller protocol and lock compatibility
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.release.outputs.channel == 'stable'
         run: python scripts/check_native_compat.py --binary target/${{ matrix.target }}/release/ports.exe
       - name: Native new-view automatic opening through historical Python controller
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.release.outputs.channel == 'stable'
         shell: pwsh
         run: |
           $env:PORTS_LEGACY_PYTHON = (Get-Command python).Source
           cargo +1.94.0 test --locked --test native_pty --target ${{ matrix.target }} native_new_view_automatic_open_uses_legacy_python_controller -- --ignored
+      - name: Beta protocol rejects historical controllers without mutation
+        if: runner.os == 'Windows' && steps.release.outputs.channel == 'beta'
+        run: python scripts/check_beta_compat.py --binary target/${{ matrix.target }}/release/ports.exe
       - name: Real OpenSSH forwarding, concurrent hosts, recovery and cancellation
         if: runner.os == 'Linux'
         run: python scripts/check_ssh_forwarding.py --binary 'target/${{ matrix.target }}/release/ports' --sudo-sshd
@@ -91,7 +108,12 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Windows ]; then extension=zip; else extension=tar.gz; fi
-          python scripts/check_native_install.py --bundle "dist/ports-${{ matrix.target }}.$extension" --with-path
+          python scripts/check_native_install.py --bundle "dist/ports-${{ matrix.target }}.$extension" --version '${{ steps.release.outputs.version }}' --channel '${{ steps.release.outputs.channel }}' --with-path
+          if [ "$RUNNER_OS" = Windows ]; then
+            python scripts/check_native_install.py --bundle "dist/ports-${{ matrix.target }}.$extension" --version '${{ steps.release.outputs.version }}' --channel '${{ steps.release.outputs.channel }}' --with-path --powershell pwsh.exe
+          fi
+      - name: Freeze successful source and package gates
+        run: python scripts/release_metadata.py --qualify '${{ matrix.target }}' --source '${{ github.sha }}'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-${{ matrix.target }}
@@ -105,6 +127,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: release-*
@@ -114,8 +139,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat dist/*.sha256 > dist/SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --prerelease --title "Ports $GITHUB_REF_NAME" --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md"
+          python scripts/release_metadata.py --record --tag "$GITHUB_REF_NAME" --source "$GITHUB_SHA"
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --prerelease --latest=false --title "Ports $GITHUB_REF_NAME" --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md"
   released-install:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: prerelease
@@ -132,4 +157,18 @@ jobs:
           python-version: '3.12'
       - name: Real advertised HTTPS installer and update
         shell: bash
-        run: python scripts/check_native_install.py --release --version "${GITHUB_REF_NAME#v}"
+        run: |
+          python scripts/release_metadata.py --tag "$GITHUB_REF_NAME" --github-output "$GITHUB_OUTPUT"
+          case "$GITHUB_REF_NAME" in *-beta.*) channel=beta;; *) channel=stable;; esac
+          python scripts/check_native_install.py --release --version "${GITHUB_REF_NAME#v}" --channel "$channel" > released-install.json
+          cat released-install.json
+          if [ "$RUNNER_OS" = Windows ]; then
+            python scripts/check_native_install.py --release --version "${GITHUB_REF_NAME#v}" --channel "$channel" --powershell pwsh.exe > released-install-pwsh.json
+            cat released-install-pwsh.json
+          fi
+      - name: Retain actual released-download receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: released-install-${{ matrix.os }}
+          path: released-install*.json
+          if-no-files-found: error

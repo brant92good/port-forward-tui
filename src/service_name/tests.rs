@@ -158,7 +158,12 @@ fn custom_and_port_literal_names_require_explicit_view_choice_and_never_write() 
             std::fs::read(root.path().join("forwards.json")).unwrap(),
             bytes
         );
-        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+        let mut files = std::fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        files.sort();
+        assert_eq!(files, [".ports-channel", "forwards.json"]);
     }
 }
 

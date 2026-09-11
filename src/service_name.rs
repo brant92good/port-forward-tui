@@ -39,14 +39,18 @@ struct Frozen {
 }
 impl Frozen {
     fn from_entry(entry: &Entry) -> Result<Self> {
-        ensure!(
-            entry.state == "ON",
-            "Start this forward before checking its web app name."
-        );
         let rule = entry
             .rule
             .clone()
             .context("Choose a saved forward first.")?;
+        ensure!(
+            !rule.is_socks(),
+            "SOCKS5 endpoints are not HTTP pages. Use B for client setup; no title request was sent."
+        );
+        ensure!(
+            entry.state == "ON",
+            "Start this forward before checking its web app name."
+        );
         Ok(Self {
             machine: entry.machine.id.clone(),
             directory: entry.machine.directory.clone(),
@@ -376,3 +380,32 @@ impl Drop for Inspector {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod socks_tests {
+    use super::*;
+    #[test]
+    fn proxy_title_is_rejected_before_worker_or_filesystem_access() {
+        let temp = tempfile::tempdir().unwrap();
+        let entry = Entry {
+            machine: crate::machines::Machine {
+                id: "fixture".into(),
+                name: "Fixture".into(),
+                target: "fixture.invalid".into(),
+                directory: temp.path().join("absent"),
+                ssh_port: None,
+                ssh_config: None,
+            },
+            rule: Some(Forward::socks(1080, "Proxy").unwrap()),
+            state: "ON".into(),
+            details: String::new(),
+            open_automatically: false,
+        };
+        let mut inspector = Inspector::default();
+        let error = inspector.open(&entry, true).unwrap_err();
+        assert!(error.to_string().contains("SOCKS5"));
+        assert!(inspector.job.is_none());
+        assert!(inspector.preview.is_none());
+        assert!(!entry.machine.directory.exists());
+    }
+}

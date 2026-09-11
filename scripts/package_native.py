@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -15,8 +16,9 @@ def main():
     root = Path(__file__).resolve().parents[1]
     binary = (options.binary or root/'target'/options.target/'release'/'ports').resolve(strict=True)
     options.output.mkdir(parents=True, exist_ok=True)
-    if subprocess.check_output([str(binary), '--version'], text=True).strip() != 'ports 0.9.1':
-        raise ValueError('Expected Ports 0.9.1')
+    version = tomllib.loads((root/'Cargo.toml').read_text())['package']['version']
+    if subprocess.check_output([str(binary), '--version'], text=True).strip() != 'ports '+version:
+        raise ValueError('Expected Ports '+version)
     archive = options.output / f'ports-{options.target}.tar.gz'
     if archive.exists():
         raise FileExistsError('Use another output directory; release bytes cannot be replaced.')

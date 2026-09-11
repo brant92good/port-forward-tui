@@ -467,7 +467,7 @@ mod tests {
         assert_eq!(manager.state(&duplicate.id), State::Error);
         assert_eq!(state.lock().unwrap().spawned, 1);
         let mut edited = rule.clone();
-        edited.remote_port = 8001;
+        edited.remote_port = Some(8001);
         manager.restart(&edited, now).unwrap();
         assert_eq!(state.lock().unwrap().spawned, 2);
         assert_eq!(state.lock().unwrap().stopped, [1]);

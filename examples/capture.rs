@@ -78,7 +78,7 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(&out)?;
     let development = machine("workbox", "Development");
     let lab = machine("lab", "Lab");
-    let rows = [
+    let mut rows = [
         (development.clone(), 8000, 8000, "API", "ON"),
         (development.clone(), 3000, 3000, "Project preview", "OFF"),
         (lab.clone(), 18888, 8888, "Jupyter notebook", "ON"),
@@ -95,6 +95,16 @@ fn main() -> Result<()> {
         })
     })
     .collect::<Result<Vec<_>>>()?;
+    rows.insert(
+        2,
+        Entry {
+            machine: development.clone(),
+            rule: Some(Forward::socks(1080, "Development proxy")?),
+            state: "ON".into(),
+            details: String::new(),
+            open_automatically: false,
+        },
+    );
     let mut terminal = Terminal::new(TestBackend::new(120, 26))?;
     let quick = Input::default();
     terminal.draw(|frame| {
@@ -117,6 +127,27 @@ fn main() -> Result<()> {
         &terminal,
         &out.join("connections.svg"),
         "Ports · native interface · example data",
+    )?;
+    terminal.draw(|frame| {
+        ui::render(
+            frame,
+            &Presentation {
+                rows: &rows,
+                selected: 2,
+                quick: &quick,
+                typing: false,
+                notice: "B shows proxy-client setup; no browser setting is changed.",
+                busy: false,
+                persistent: true,
+                automatic: &Default::default(),
+                automatic_errors: &Default::default(),
+            },
+        )
+    })?;
+    save(
+        &terminal,
+        &out.join("socks-proxy.svg"),
+        "Ports BETA · SOCKS5 proxy · example state, no network",
     )?;
     let quick = Input::new("18000:8000 API");
     terminal.draw(|frame| {
@@ -178,6 +209,36 @@ fn main() -> Result<()> {
         &out.join("edit-connection.svg"),
         "E · Edit favorite · example data",
     )?;
+    let proxy_fields = [
+        ("Proxy port on this computer", "1080".into()),
+        ("Name (optional)", "Development proxy".into()),
+    ];
+    let proxy_inputs = proxy_fields
+        .iter()
+        .map(|(_, value)| Input::new(value))
+        .collect::<Vec<_>>();
+    form_terminal.draw(|frame| {
+        screen::render_form(
+            frame,
+            " Add SOCKS5 proxy · BETA ",
+            &proxy_fields,
+            &proxy_inputs,
+            0,
+            "Server: Development · Save and connect\nDestinations are chosen by your proxy client.",
+        )
+    })?;
+    save(
+        &form_terminal,
+        &out.join("add-socks.svg"),
+        "P · Add SOCKS5 proxy · example data",
+    )?;
+    let proxy_edit = forward_form::Model::new(example.path(), rows[2].rule.clone().unwrap());
+    form_terminal.draw(|frame| forward_form::render(frame, &proxy_edit, "Development", false))?;
+    save(
+        &form_terminal,
+        &out.join("edit-socks.svg"),
+        "E · Edit SOCKS5 proxy and automatic opening · example data",
+    )?;
     let inspector = Inspector::screenshot(
         &rows[0],
         "<html><head><title>Project dashboard</title></head></html>",
@@ -188,8 +249,6 @@ fn main() -> Result<()> {
         &out.join("web-title.svg"),
         "T · Web title preview · example data, no request made",
     )?;
-    println!(
-        "Rendered native list, quick entry, add/edit forms and title preview with example data."
-    );
+    println!("Rendered native lists, fixed/proxy forms and title preview with example data.");
     Ok(())
 }

@@ -12,12 +12,14 @@ metadata, tunnel intent, process ownership and screen state in separate modules.
 | `src/connection_list.rs` | Name-first rows under machine headings, with selected-row scrolling |
 | `src/service_name.rs` | Explicit, bounded local HTTP title preview and view-only labels |
 | `src/process/` | Owned SSH process groups/jobs and OS listener ownership |
-| `src/background.rs` | Per-machine detached controller, protocol-1 IPC and serialized edits |
+| `src/background.rs` | Per-machine detached beta controller, protocol-2 IPC and serialized edits |
+| `src/channel.rs` | Separate beta data ownership and explicit metadata-only stable import |
 | `src/cli.rs` | Commands and versioned JSON results |
 | `src/ui.rs`, `picker.rs`, `screen.rs` | Combined view, machine picker and keyboard forms |
 | `src/views.rs`, `native/` | Optional Windows Terminal identity/focus integration |
 
-The controller launches OpenSSH with loopback-only local forwarding, strict
+The controller launches OpenSSH with loopback-only fixed forwarding or a SOCKS
+listener, strict
 host-key checking, noninteractive authentication and keepalives. It determines
 ON from the owning process's listener, without probing the remote service.
 Windows uses owned jobs; Unix uses separate process groups. Stopping affects
@@ -26,26 +28,31 @@ owned processes, including ProxyCommand descendants.
 Views talk to an authenticated loopback controller through bounded JSON
 messages. A per-machine lock selects the controller; two views attach to it.
 Favorites are written atomically, and edits/deletes carry their previous value
-to reject conflicting changes. Protocol 1 and saved schemas preserve the
-earlier client's data contract during migration.
+to reject conflicting changes. Beta uses protocol 2 in separate data directories.
+Stable controllers use protocol 1 and cannot share beta data or views. Both
+directions reject incompatible requests before mutation.
 
 ## Data
 
 Default data folders follow the OS's local application-data location:
 
-- Windows: `%LOCALAPPDATA%/PortForwardTUI`
-- Linux: `$XDG_DATA_HOME/PortForwardTUI`, normally `~/.local/share/PortForwardTUI`
-- macOS: `~/Library/Application Support/PortForwardTUI`
+- Windows: `%LOCALAPPDATA%/PortForwardTUI-Beta`
+- Linux: `$XDG_DATA_HOME/PortForwardTUI-Beta`, normally `~/.local/share/PortForwardTUI-Beta`
+- macOS: `~/Library/Application Support/PortForwardTUI-Beta`
 
 `--data-dir PATH` overrides that location. An existing root `forwards.json`
 remains a machine. Additional machines have their own folders under `machines/`.
 Custom SSH config paths are local filesystem references, passed to OpenSSH
-with `-F`. Never publish endpoint tokens, keys or personal connection metadata.
+with `-F`. The beta refuses unmarked existing data and the stable default folder;
+use `import-stable --from PATH` with a new beta destination to copy validated
+metadata. It never copies automatic-opening intent or running state. Never
+publish endpoint tokens, keys or personal connection metadata.
 
 Each machine's optional `forward-options.json` uses
 `{"version":1,"open_automatically":["FAVORITE_ID"]}`. Missing means every
 favorite is disabled. A separate short-lived lock protects atomic preference
-merges; old controllers continue reading the unchanged `forwards.json` schema.
+merges. Local-only favorites retain their old row shape and schema 1; adding a
+proxy promotes the beta file to schema 2, which remains after deleting proxies.
 Deleted IDs are inert. Malformed or unsupported options disable automatic work
 for that machine and display a warning, while manual controls remain available.
 
@@ -53,7 +60,7 @@ A new TUI captures opted-in favorites and their machine destination settings.
 It processes one automatic request at a time, prioritizes manual actions and
 rechecks for changed/deleted preferences, favorites and destinations before
 dispatch. Starts use the existing requested-port conflict checks and idempotent
-protocol-1 command. Q/Stop cancel this view's unsent work; at most the current bounded
+protocol-2 command. Q/Stop cancel this view's unsent work; at most the current bounded
 request finishes before a queued stop. No refresh rebuilds this launch queue.
 
 E edits connection fields and the automatic-opening checkbox together. The
@@ -62,11 +69,12 @@ checks the original snapshots before changes, then checks the newly saved
 favorite before merging its option. A later failure reports which fields were
 actually saved and retains the dialog; it does not claim a two-file transaction.
 Checkbox-only changes never call the controller. F2 and CLI metadata edits remain
-compatible with earlier controllers.
+local metadata operations that do not start a controller.
 
 ## Explicit web titles
 
-Only T on a selected ON row starts a title check. The worker freezes the machine,
+Only T on a selected ON fixed-forward row starts a title check. A proxy's B/T
+action displays client setup guidance without HTTP traffic. The worker freezes the machine,
 directory, destination and full favorite, validates current state, then requests
 `http://127.0.0.1:LOCAL_PORT/`. It disables proxy discovery and redirects, accepts
 only status 200 with uncompressed HTML, and bounds headers to 16 KiB, the body to

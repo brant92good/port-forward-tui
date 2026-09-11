@@ -88,7 +88,7 @@ fn real_cli_readonly_and_picker_contract() {
     for args in [&["list"][..], &["machines", "list"], &["doctor"]] {
         let (code, result) = cli(&absent, args);
         assert_eq!(code, 0, "{result}");
-        assert_eq!(result["schema_version"], 1);
+        assert_eq!(result["schema_version"], 2);
         assert!(!absent.exists());
     }
     let (code, result) = cli(&absent, &["start", "bad", "--wait", "nan"]);
@@ -187,7 +187,7 @@ fn real_ipc_concurrent_edits_slow_clients_auth_and_broken_file_stop() {
         Duration::from_secs(2),
     )
     .unwrap();
-    assert_eq!(snapshot["protocol"], 1);
+    assert_eq!(snapshot["protocol"], 2);
     assert!(snapshot["states"].as_object().unwrap().is_empty());
     let rule = Forward::new(19287, 9287, "One").unwrap();
     background::exchange(
@@ -258,6 +258,7 @@ fn real_ipc_concurrent_edits_slow_clients_auth_and_broken_file_stop() {
 #[test]
 fn string_ports_roundtrip_without_creating_or_replacing_favorites() {
     let temp = tempfile::tempdir().unwrap();
+    port_forward_tui::channel::prepare(temp.path()).unwrap();
     let payload = json!({"version":1,"host":"workbox","ssh_port":"2222","forwards":[{"id":"0123456789abcdef0123456789abcdef","name":"API","local_port":"18000","remote_port":"8000"}]});
     fs::write(
         temp.path().join("forwards.json"),
@@ -301,7 +302,7 @@ fn controller_waits_for_a_connected_client_to_send_its_request() {
     // A client may be descheduled after connect, or send a request in pieces.
     // Windows accepted sockets inherit the listener's nonblocking mode.
     thread::sleep(Duration::from_millis(100));
-    let request = json!({"protocol": 1, "token": endpoint.token, "command": "status"});
+    let request = json!({"protocol": 2, "token": endpoint.token, "command": "status"});
     let bytes = serde_json::to_vec(&request).unwrap();
     stream.write_all(&bytes[..8]).unwrap();
     thread::sleep(Duration::from_millis(100));

@@ -315,7 +315,11 @@ fn quick_operation(entry: &Entry, rows: &[Entry], text: &str) -> Result<Operatio
         .iter()
         .filter(|row| row.machine.id == entry.machine.id)
         .filter_map(|row| row.rule.as_ref())
-        .find(|rule| rule.local_port == local_port && rule.remote_port == remote_port);
+        .find(|rule| {
+            !rule.is_socks()
+                && rule.local_port == local_port
+                && rule.remote_port == Some(remote_port)
+        });
     let mut rule = if let Some(previous) = previous {
         previous.clone()
     } else {
@@ -426,7 +430,11 @@ fn render_named(
         "Foreground · closing this view stops its forwards"
     };
     frame.render_widget(
-        Paragraph::new(format!("{active}  ·  {mode}")).block(screen::panel(" PORTS ")),
+        Paragraph::new(format!("{active}  ·  {mode}")).block(screen::panel(&format!(
+            " PORTS {} · {} ",
+            crate::channel::CHANNEL.to_ascii_uppercase(),
+            env!("CARGO_PKG_VERSION")
+        ))),
         areas[0],
     );
     frame.render_widget(
@@ -440,9 +448,20 @@ fn render_named(
         areas[1],
     );
     crate::connection_list::render_named(frame, areas[2], rows, selected, automatic, names);
-    let detail=rows.get(selected).map(|entry|if entry.details.is_empty(){entry.rule.as_ref().map(|r|format!("{} · http://127.0.0.1:{} → {}:{}\nON confirms the local SSH listener. The app on the server must also be running.",r.name,r.local_port,entry.machine.target,r.remote_port)).unwrap_or_else(||"Press A to add a favorite for this machine.".into())}else{entry.details.clone()}).unwrap_or_default();
+    let detail = rows.get(selected).map(|entry| {
+        if let Some(rule) = &entry.rule {
+            if rule.is_socks() {
+                let status = if entry.details.is_empty() { "Configure a SOCKS5 client; B / T shows how. ON confirms only the local listener." } else { &entry.details };
+                format!("{} · SOCKS5 {} via {}\n{status}", rule.name, rule.endpoint_url(), entry.machine.target)
+            } else if entry.details.is_empty() {
+                format!("{} · {} → {}:{}\nON confirms the local SSH listener. The app on the server must also be running.", rule.name, rule.endpoint_url(), entry.machine.target, rule.remote_port.unwrap_or_default())
+            } else {
+                entry.details.clone()
+            }
+        } else { "Press A for a fixed forward or P for a SOCKS5 proxy.".into() }
+    }).unwrap_or_default();
     let detail = format!(
-        "{detail}\nOpen automatically: {} (F2 settings)",
+        "Open automatically: {} (F2 settings)\n{detail}",
         rows.get(selected)
             .map_or("off", |entry| if entry.open_automatically {
                 "on"
@@ -473,10 +492,17 @@ fn render_named(
             automatic_errors.len()
         )
     };
-    frame.render_widget(Paragraph::new(format!("Enter on/off · N quick · A add · E edit · D delete · B URL · T title · H machines · F2 settings · ? help · Q close\n{automatic_summary}{}{}",if busy{"Working… "}else{""},notice)).wrap(Wrap{trim:false}).style(Style::default().fg(ACCENT)),areas[4]);
+    frame.render_widget(Paragraph::new(format!("Enter on/off · N quick · A add · P proxy · E edit · D delete · B/T use · H hosts · F2 settings · ? help · Q close\n{automatic_summary}{}{}",if busy{"Working… "}else{""},notice)).wrap(Wrap{trim:false}).style(Style::default().fg(ACCENT)),areas[4]);
 }
-fn open_browser(port: u16) -> Result<()> {
-    let url = format!("http://127.0.0.1:{port}");
+fn browser_url(rule: &Forward) -> Result<String> {
+    anyhow::ensure!(
+        !rule.is_socks(),
+        "SOCKS5 is a proxy endpoint. Configure a proxy-aware client; it is not an HTTP page."
+    );
+    Ok(rule.endpoint_url())
+}
+fn open_browser(rule: &Forward) -> Result<()> {
+    let url = browser_url(rule)?;
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -501,6 +527,12 @@ fn open_browser(port: u16) -> Result<()> {
             .spawn()?;
     }
     Ok(())
+}
+fn socks_guidance(rule: &Forward) -> String {
+    format!(
+        "SOCKS5: 127.0.0.1:{} · Enter / Esc returns\nConfigure a SOCKS5 client to use this local port.\nEach request chooses a destination through the SSH server.\nExample curl (replace DESTINATION:PORT):\ncurl --socks5-hostname 127.0.0.1:{} http://DESTINATION:PORT/\nThat flag sends the hostname to the server for resolution.\nBrowser localhost bypass may need separate configuration.\nPorts changes no OS/browser proxy settings or remote app.\nTCP only; no UDP or whole-device VPN.\nON confirms the local listener, not a healthy destination.\nB / T send no HTTP request and launch no browser.",
+        rule.local_port, rule.local_port
+    )
 }
 
 fn settings(terminal: &mut screen::Screen, entry: &Entry) -> Result<bool> {
@@ -572,6 +604,7 @@ fn automatic_operation(pending: Pending) -> Operation {
 }
 
 pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
+    crate::channel::validate_directory(&machine.directory)?;
     let store = Store::load(&machine.directory)?;
     let persistent = store.settings.keep_alive && !foreground;
     let _locks = if persistent {
@@ -960,20 +993,34 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                 }
             }
             KeyCode::Char('b') => {
-                if let Some(rule) = entry.as_ref().and_then(|e| e.rule.as_ref())
-                    && let Err(error) = open_browser(rule.local_port)
-                {
-                    notice = error.to_string();
+                if let Some(rule) = entry.as_ref().and_then(|e| e.rule.as_ref()) {
+                    if rule.is_socks() {
+                        screen::message(
+                            &mut session.terminal,
+                            " SOCKS5 client setup ",
+                            &socks_guidance(rule),
+                            false,
+                        )?;
+                    } else if let Err(error) = open_browser(rule) {
+                        notice = error.to_string();
+                    }
                 }
             }
             _ if (!pending.is_empty() || changing) && key.code != KeyCode::Char('s') => {
                 notice = "Wait for the current change to finish.".into()
             }
             KeyCode::Char('t') => {
-                if let Some(entry) = &entry
-                    && let Err(error) = names.open(entry, persistent)
-                {
-                    notice = format!("{error:#}");
+                if let Some(entry) = &entry {
+                    if let Some(rule) = entry.rule.as_ref().filter(|rule| rule.is_socks()) {
+                        screen::message(
+                            &mut session.terminal,
+                            " SOCKS5 client setup ",
+                            &socks_guidance(rule),
+                            false,
+                        )?;
+                    } else if let Err(error) = names.open(entry, persistent) {
+                        notice = format!("{error:#}");
+                    }
                 }
             }
             KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('r') => {
@@ -1031,21 +1078,44 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     }
                 }
             }
-            KeyCode::Char('a') => {
+            KeyCode::Char('a' | 'p') => {
                 if let Some(entry) = &entry {
-                    let fields = [
-                        ("App port on server", String::new()),
-                        ("Port on this computer (blank uses same)", String::new()),
-                        ("Name (optional)", String::new()),
-                    ];
+                    let socks = key.code == KeyCode::Char('p');
+                    let fields = if socks {
+                        vec![
+                            ("Proxy port on this computer", "1080".into()),
+                            ("Name (optional)", String::new()),
+                        ]
+                    } else {
+                        vec![
+                            ("App port on server", String::new()),
+                            ("Port on this computer (blank uses same)", String::new()),
+                            ("Name (optional)", String::new()),
+                        ]
+                    };
                     if let Some(values) = screen::form(
                         &mut session.terminal,
-                        " Add favorite ",
+                        if socks {
+                            " Add SOCKS5 proxy · BETA "
+                        } else {
+                            " Add favorite "
+                        },
                         &fields,
                         0,
-                        &format!("Server: {} · Save and connect", entry.machine.name),
+                        &format!(
+                            "Server: {} · Save and connect{}",
+                            entry.machine.name,
+                            if socks {
+                                "\nDestinations are chosen by your proxy client."
+                            } else {
+                                ""
+                            }
+                        ),
                     )? {
                         let result = (|| -> Result<Forward> {
+                            if socks {
+                                return Forward::socks(store::port(values[0].trim())?, &values[1]);
+                            }
                             let remote = store::port(values[0].trim())?;
                             let local = if values[1].trim().is_empty() {
                                 remote
@@ -1123,4 +1193,39 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     }
     Ok(())
 }
-const HELP: &str = "Quick entry: type 8000 then Enter, or 18000:8000 API. The first number is local; the second is the server's app port. A opens the full form.\n\n↑/↓ select · Enter/Space start or stop · N quick entry\nA add favorite · E edit · D delete · B open local URL · T check web app name\nR reconnect · S stop all listed servers · H manage machines\nF2 settings / open automatically · Q / Ctrl+Q close view\n\nFavorites start OFF unless Open automatically is enabled in F2 Settings. A new view applies that preference once; refresh never does. Enter cancels a QUEUED item; Q and S cancel unsent opening work. Stop keeps the preference for the next new view. Started forwards retry network failures after 2 seconds, increasing to at most 30 seconds. Enter stops pending retries. Authentication, host-key and occupied-port errors need attention.\n\nBackground is on by default. Closing a tab or the entire terminal leaves the controller running. Signing out or rebooting ends it. --foreground stops the view's connections when it closes.\n\nT reads one HTML page from the selected ON local forward. Enter keeps the saved name; U uses its title in this view only. E restores the saved name. No title is saved and no forward is changed.\n\nFor first-time host trust or login problems, run ssh YOUR_ALIAS in a shell. Encrypted keys need ssh-agent. ON confirms an owned local listener, not the health of the remote app.";
+const HELP: &str = "Ports BETA: isolated saved SSH connections.\nUp/Down select · Enter/Space start/stop · R reconnect\nN / digits quick fixed forward: 8000 or 18000:8000 API\nA add fixed forward · P add SOCKS5 proxy (default 1080)\nE edits the selected kind's ports/name + Open automatically\nD delete · S stop every listed server · H machines\nF2 settings · Q / Ctrl+Q close · ? help\n\nFixed forward: B opens HTTP; T previews title; U labels this view.\nSOCKS5: B / T shows client setup; neither sends HTTP nor opens a browser.\nSOCKS needs proxy-aware clients; OS/browser settings are unchanged.\n\nAuto opening defaults off; only a new view applies opted-in favorites.\nEnter cancels QUEUED; Q/S cancel unsent work. Stop cancels retries.\nRetries reach 30s; auth, host-key and occupied-port errors need attention.\nBackground survives terminal close; sign-out/reboot ends it.\n--foreground stops owned connections when closed.\nON confirms the local SSH listener, not every destination.\nBeta protocol 2 does not share stable controllers.";
+
+#[cfg(test)]
+mod socks_tests {
+    use super::*;
+    #[test]
+    fn quick_entry_cannot_retarget_a_saved_proxy_with_the_same_local_port() {
+        let temp = tempfile::tempdir().unwrap();
+        let proxy = Forward::socks(1080, "Proxy").unwrap();
+        let mut entry = Entry {
+            machine: Machine {
+                id: "fixture".into(),
+                name: "Fixture".into(),
+                target: "fixture.invalid".into(),
+                directory: temp.path().to_path_buf(),
+                ssh_port: None,
+                ssh_config: None,
+            },
+            rule: Some(proxy.clone()),
+            state: "OFF".into(),
+            details: String::new(),
+            open_automatically: false,
+        };
+        let operation = quick_operation(&entry, &[entry.clone()], "1080 API").unwrap();
+        let fixed: Forward = serde_json::from_value(operation.args["rule"].clone()).unwrap();
+        assert!(!fixed.is_socks());
+        assert_eq!(fixed.remote_port, Some(1080));
+        assert_ne!(fixed.id, proxy.id);
+        assert!(operation.args["expected"].is_null());
+        entry.rule = Some(fixed.clone());
+        let operation = quick_operation(&entry, &[entry.clone()], "1080 renamed").unwrap();
+        assert_eq!(operation.args["rule"]["id"], fixed.id);
+        assert!(browser_url(&proxy).is_err());
+        assert_eq!(browser_url(&fixed).unwrap(), "http://127.0.0.1:1080");
+    }
+}
