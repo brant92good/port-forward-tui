@@ -1046,23 +1046,35 @@ fn automatic_dispatch_rechecks_preferences_after_blocked_controller_preparation(
         auto_open::set(&machine.directory, &rule.id, true).unwrap();
         // The old implementation validated before its SECOND status call
         // (inside ensure_daemon), so an edit at this gate escaped validation.
-        // Change metadata inside the request, before its response. Waiting for
-        // a painted frame first can outlast the caller's 500 ms status timeout.
-        let directory = machine.directory.clone();
+        // Prepare and sync valid JSON before launching. A filesystem sync can
+        // outlast the 500 ms status timeout; the callback tests publication of
+        // the new metadata, not preparation of an as-yet unpublished file.
+        let prepared = tempfile::NamedTempFile::new_in(&machine.directory)
+            .unwrap()
+            .into_temp_path();
+        let destination = machine.directory.join(if change == "disable" {
+            auto_open::FILE
+        } else {
+            "forwards.json"
+        });
+        let before = std::fs::read(&destination).unwrap();
+        if change == "disable" {
+            let mut preferences = auto_open::Preferences::load(&machine.directory).unwrap();
+            preferences.open_automatically.remove(&rule.id);
+            port_forward_tui::store::write_json(&prepared, &preferences).unwrap();
+        } else {
+            if change == "favorite" {
+                store.settings.forwards[0].remote_port += 1;
+            } else {
+                store.settings.host = "changed.invalid".into();
+            }
+            store.settings.validate().unwrap();
+            port_forward_tui::store::write_json(&prepared, &store.settings).unwrap();
+        }
+        assert_eq!(std::fs::read(&destination).unwrap(), before);
         let peer =
             controlled_controller::Peer::change_on_status(&machine.directory, 2, move || {
-                match change {
-                    "disable" => auto_open::set(&directory, &rule.id, false).unwrap(),
-                    "favorite" => {
-                        let mut edited = rule.clone();
-                        edited.remote_port += 1;
-                        store.save(vec![edited]).unwrap();
-                    }
-                    _ => {
-                        store.settings.host = "changed.invalid".into();
-                        store.save(vec![rule.clone()]).unwrap();
-                    }
-                }
+                prepared.persist(&destination).unwrap();
             });
         let mut view = Session::start(temp.path(), &machine.id);
         // Pump the ConPTY cursor-position handshake; the mutation itself no
