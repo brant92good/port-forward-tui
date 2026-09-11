@@ -97,52 +97,6 @@ impl Group {
     }
 }
 
-#[cfg(test)]
-mod exit_tests {
-    use super::*;
-
-    #[test]
-    fn observation_retains_leader_until_group_stop_then_reaps_once() {
-        let mut command = Command::new("/bin/sh");
-        command.args(["-c", "exit 17"]);
-        configure_ssh(&mut command);
-        let mut child = command.spawn().unwrap();
-        let mut group = Group::attach(&mut child).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while exited(&child).unwrap().is_none() {
-            assert!(Instant::now() < deadline, "owned child did not exit");
-            thread::sleep(Duration::from_millis(5));
-        }
-        for _ in 0..3 {
-            assert_eq!(exited(&child).unwrap(), Some(17));
-        }
-        group.stop(&mut child);
-        assert_eq!(
-            exited(&child).unwrap_err().raw_os_error(),
-            Some(libc::ECHILD)
-        );
-        assert_eq!(child.wait().unwrap().code(), Some(17));
-        group.stop(&mut child);
-    }
-
-    #[test]
-    fn already_reaped_child_does_not_retain_group_signal_authority() {
-        let mut command = Command::new("/bin/sh");
-        command.args(["-c", "exit 0"]);
-        configure_ssh(&mut command);
-        let mut child = command.spawn().unwrap();
-        let mut group = Group::attach(&mut child).unwrap();
-        child.wait().unwrap();
-        assert_eq!(
-            exited(&child).unwrap_err().raw_os_error(),
-            Some(libc::ECHILD)
-        );
-        group.stop(&mut child);
-        assert!(group.pid.is_none());
-        group.stop(&mut child);
-    }
-}
-
 #[cfg(target_os = "linux")]
 pub fn listeners(pids: &[u32]) -> Result<Listeners> {
     use std::{collections::HashMap, fs};
@@ -231,4 +185,50 @@ pub fn listeners(pids: &[u32]) -> Result<Listeners> {
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn listeners(_pids: &[u32]) -> Result<Listeners> {
     anyhow::bail!("This operating system has no qualified listener ownership backend.")
+}
+
+#[cfg(test)]
+mod exit_tests {
+    use super::*;
+
+    #[test]
+    fn observation_retains_leader_until_group_stop_then_reaps_once() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "exit 17"]);
+        configure_ssh(&mut command);
+        let mut child = command.spawn().unwrap();
+        let mut group = Group::attach(&mut child).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while exited(&child).unwrap().is_none() {
+            assert!(Instant::now() < deadline, "owned child did not exit");
+            thread::sleep(Duration::from_millis(5));
+        }
+        for _ in 0..3 {
+            assert_eq!(exited(&child).unwrap(), Some(17));
+        }
+        group.stop(&mut child);
+        assert_eq!(
+            exited(&child).unwrap_err().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+        assert_eq!(child.wait().unwrap().code(), Some(17));
+        group.stop(&mut child);
+    }
+
+    #[test]
+    fn already_reaped_child_does_not_retain_group_signal_authority() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "exit 0"]);
+        configure_ssh(&mut command);
+        let mut child = command.spawn().unwrap();
+        let mut group = Group::attach(&mut child).unwrap();
+        child.wait().unwrap();
+        assert_eq!(
+            exited(&child).unwrap_err().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+        group.stop(&mut child);
+        assert!(group.pid.is_none());
+        group.stop(&mut child);
+    }
 }
