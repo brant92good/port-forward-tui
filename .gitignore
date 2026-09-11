@@ -5,6 +5,7 @@ __pycache__/
 *.bak
 endpoint.json
 forwards.json
+forward-options.json
 ui-settings.json
 views/
 window-views/

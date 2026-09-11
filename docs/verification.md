@@ -1,5 +1,131 @@
 # Native verification
 
+## Unreleased: Windows saves during concurrent reads
+
+This source-only correction passed local Windows tests and independent source
+review. It is not included in the immutable v0.9.1 release; hosted qualification,
+a versioned release and installation remain separate gates.
+
+Windows can reject atomic file replacement while another view or CLI reader
+holds the destination open. The writer now retains the same prepared temporary
+file and retries only replacement errors 5/32 at 5 ms intervals within a 250 ms
+retry budget. It does not replay the edit or any SSH operation. Unix replacement
+is unchanged. This budget does not impose a timeout on filesystem calls or sync.
+Errors identify the read/create/write/sync/replace stage and affected path.
+
+Three file-only regressions cover a reader closing after 100 ms, a reader held
+through the retry budget (old bytes and in-memory settings remain unchanged),
+and an unrelated missing-parent error without retries. The old single-attempt
+implementation fails the reader-release regression with error 5. After restoring
+the fix, the complete local suite passed 60 active tests with four deliberate
+fixture-specific ignores; formatting and all-target/all-features Clippy passed.
+
+## v0.9.1: editing, groups, output and title preview
+
+The published v0.9.1 release subsequently passed all eleven native release and
+download/install jobs in [run 34527217550](https://github.com/brant92good/port-forward-tui/actions/runs/34527217550).
+The candidate observations below are historical; their pending release checks
+were resolved by that run. macOS desktop use remains beta. The Windows save fix
+above is newer source and is not part of v0.9.1.
+
+### Historical candidate observations
+
+These changes are source-qualified locally; the new five-target release and
+actual HTTPS asset gates are pending. Earlier released evidence below remains
+historical. macOS remains beta.
+
+The immutable 0.9.0 tag's [native run](https://github.com/brant92good/port-forward-tui/actions/runs/34524770413)
+passed Windows but failed the same new edit-form terminal test on all four Unix
+targets. It sent Escape immediately followed by Q; Unix can decode those bytes
+as Alt+Q, leaving the form open. The test now observes the main view with the
+form absent before sending Q. Its Windows replay passed. Version 0.9.1 reruns
+the full hosted gate; no 0.9.0 release assets were published or replaced.
+
+- The E form includes the existing Open automatically preference. Metadata-only
+  edits do not call the controller or change a current connection. Tests cover
+  stale favorites/options, invalid options, separate-file partial failures,
+  on/off round trips, new-view behavior and small form navigation.
+- Name-first rows sit under nonselectable server headings. Buffer tests exercise
+  narrow viewports, Unicode, long names and selected-row visibility; actual
+  keyboard scenarios retain their machine association and saved-value checks.
+- [Buffered-output measurements](rendering.md) compare identical frame bytes in
+  hidden ConPTY sessions. Failure tests ensure a dropped writer cannot replay
+  buffered content after leaving the alternate screen. They do not measure
+  physical painting or desktop return shortcuts.
+- T explicitly previews one ON forward's HTTP HTML title. Tests cover response,
+  size, time, encoding and control-text limits; saved names and connection
+  state remain unchanged. An actual disposable OpenSSH forward carried the
+  controlled HTML response. U is view-only; this is not process discovery,
+  authentication, HTTPS or JavaScript execution.
+
+The combined default Windows suite passed 57 active tests, with four deliberate
+harness-specific ignores. The separate actual SSH title case also passed.
+All-target/all-features Clippy passed after the screenshot feature was added.
+Native documentation captures use the actual widget renderers with synthetic
+state; no request is made to create the title screenshot.
+
+Four local notice-collector tests pass. An isolated Windows installer fixture
+passes full-notice installation/update, explicit 0.8.1 legacy installation,
+and rejection of five malformed/tampered bundle variants without changing
+installed files. A compiled 0.9.0 Windows ZIP also passed fresh/update, checksum,
+saved-data and polluted-environment checks. The 0.9.1 package, Unix notice installers and public HTTPS
+downloads still require their release-matrix checks. Normal use remains compiled;
+these Python programs are developer fixtures only.
+
+## v0.8.1 automatic opening
+
+The v0.8.1 release adds per-favorite opt-in preferences. Local
+Windows tests cover separate metadata/unchanged legacy schema, concurrent
+preference edits, malformed options, frozen destination/favorite checks and
+read-only CLI behavior. Actual ConPTY checks use isolated controllers and
+owned SSH-shaped loopback processes: new-view starts across two machines,
+concurrent views retaining running PIDs, manual Stop surviving refresh,
+new-view reapplication, Quit/Stop-all cancellation, retrying port reservations
+and foreground-only scope/cleanup. No personal forward or desktop window is
+used. Independent review replayed the automatic-opening ConPTY cases, metadata
+checks and forced-app-exit cleanup. Additional regressions cover three queued
+manual Stops, repeated-key coalescing, persistent per-rule failures, and changed
+preferences/destinations while controller preparation is delayed.
+
+The immutable runtime is `78b183021f22b7380faef3334ade9ec50696c474`.
+All five native target jobs, publication and five actual public HTTPS
+install/update jobs passed in
+[run 34476916550](https://github.com/brant92good/port-forward-tui/actions/runs/34476916550).
+Windows x64, Linux x64/ARM64 and macOS Intel/Apple Silicon used the advertised
+installer and actual release downloads. Windows additionally passed native
+new-view automatic opening through an existing historical Python controller,
+including simultaneous views retaining the same SSH process and manual Stop.
+The Windows ZIP SHA-256 is
+`34cdcdc34768785d919d6059e6d757efaa2d481e39babf45d375009e9a32e0b8`.
+
+Independent Windows downloads verified the ZIP sidecar and all three bundled
+binary hashes. The executable SHA-256 is
+`79d26dc35f7342f57ef8ffc1fd1f7b75d71c431dd0b65b6f84dc4cebbc8fb735`.
+Actual HTTPS fresh installation and update also passed locally under Windows
+PowerShell 5.1 and PowerShell 7.6.6. The saved forwards stayed byte-identical and
+an enabled automatic-opening preference survived the update. Metadata edits and
+read-only listing created no controller; listing correctly reported UNKNOWN
+with `background: not_connected`, rather than inventing an observed OFF state.
+
+The v0.8.0 tag remains immutable and has no assets. Its ARM64 release test
+waited for a brief settings-save message that a concurrent automatic completion
+could replace. The saved preference and OFF state were correct. v0.8.1 changes
+that test to inspect the durable saved value and selected-row detail; application
+behavior is unchanged. The original five-platform candidate passed in
+[run 34475514796](https://github.com/brant92good/port-forward-tui/actions/runs/34475514796).
+
+The separate historical Python UI suite had one first-attempt form-dismissal
+failure in
+[run 34476916541](https://github.com/brant92good/port-forward-tui/actions/runs/34476916541).
+That UI and test are unchanged from v0.7.3. The exact case passed independently
+on Windows and the one hosted failed-job replay passed. The first log only shows
+the modal still open; it does not establish whether input delivery or dismissal
+timing caused it. This is retained as an unresolved historical UI test flake,
+separate from the passing Rust-to-historical-controller compatibility gate.
+
+The earlier v0.7.3 evidence below remains historical; its real Windows Terminal
+window-close result does not qualify every new-view preference scenario.
+
 Updated September 10, 2026. Native v0.7.3 binaries and installer checks are published. Results below
 describe their actual fixtures, not every developer's computer.
 

@@ -1,5 +1,7 @@
 use crate::{
+    auto_open::{self, Pending, Preferences},
     background::{self, Supervisor},
+    forward_form,
     machines::{Catalog, Machine},
     process::NativeBackend,
     screen::{self, ACCENT, Input, MUTED},
@@ -10,11 +12,12 @@ use anyhow::{Context, Result};
 use crossterm::event::{Event, KeyCode};
 use ratatui::{
     layout::{Constraint, Layout},
-    style::{Color, Style},
-    widgets::{Cell, Paragraph, Row, Table, TableState, Wrap},
+    style::Style,
+    widgets::{Clear, Paragraph, Wrap},
 };
 use serde_json::{Value, json};
 use std::{
+    collections::{BTreeMap, VecDeque},
     path::PathBuf,
     sync::mpsc::{self, Receiver, SyncSender},
     thread,
@@ -27,9 +30,11 @@ pub struct Entry {
     pub rule: Option<Forward>,
     pub state: String,
     pub details: String,
+    pub open_automatically: bool,
 }
 fn entries(machine: &Machine, snapshot: Option<&Value>, error: Option<&str>) -> Result<Vec<Entry>> {
     let store = Store::load(&machine.directory)?;
+    let preferences = Preferences::load(&machine.directory);
     let rules: Vec<Forward> = if let Some(snapshot) = snapshot {
         serde_json::from_value(snapshot["forwards"].clone())?
     } else {
@@ -42,15 +47,20 @@ fn entries(machine: &Machine, snapshot: Option<&Value>, error: Option<&str>) -> 
                 .map(|s| s["states"][&rule.id].as_str().unwrap_or("OFF"))
                 .unwrap_or(if error.is_some() { "UNKNOWN" } else { "OFF" })
                 .to_owned();
-            let details = snapshot
+            let mut details = snapshot
                 .and_then(|s| s["details"][&rule.id].as_str())
                 .unwrap_or(error.unwrap_or(""))
                 .to_owned();
+            if let Err(error) = &preferences {
+                details.push_str(&format!("\nAutomatic opening disabled: {error:#}"));
+            }
+            let open_automatically = preferences.as_ref().is_ok_and(|p| p.enabled(&rule.id));
             Entry {
                 machine: machine.clone(),
                 rule: Some(rule),
                 state,
                 details,
+                open_automatically,
             }
         })
         .collect::<Vec<_>>();
@@ -60,6 +70,7 @@ fn entries(machine: &Machine, snapshot: Option<&Value>, error: Option<&str>) -> 
             rule: None,
             state: String::new(),
             details: error.unwrap_or("").into(),
+            open_automatically: false,
         });
     }
     Ok(entries)
@@ -111,6 +122,7 @@ struct Operation {
     directory: PathBuf,
     command: &'static str,
     args: Value,
+    automatic: Option<Pending>,
 }
 enum Update {
     Rows(u64, Result<Vec<Entry>>),
@@ -156,6 +168,11 @@ impl Worker {
     }
 }
 fn perform(catalog: &Catalog, operation: &Operation) -> Result<Value> {
+    if let Some(automatic) = &operation.automatic {
+        automatic.validate()?;
+        // Controller preparation may wait; frozen checks must run after it.
+        background::ensure_daemon(&operation.directory)?;
+    }
     let rows = if matches!(operation.command, "start" | "restart" | "upsert" | "quick") {
         Some(load_entries(catalog, true)?)
     } else {
@@ -163,6 +180,25 @@ fn perform(catalog: &Catalog, operation: &Operation) -> Result<Value> {
     };
     let resolved = resolve_operation(operation, rows.as_deref().unwrap_or_default())?;
     let operation = &resolved;
+    if let Some(automatic) = &operation.automatic {
+        // Status can take time. Revalidate the frozen rule/route immediately
+        // before dispatch too, without teaching old controllers new fields.
+        automatic.validate()?;
+        if rows.as_ref().is_some_and(|rows| {
+            rows.iter().any(|row| {
+                row.machine.directory == operation.directory
+                    && row
+                        .rule
+                        .as_ref()
+                        .is_some_and(|rule| rule.id == automatic.rule.id)
+                    && requested(&row.state)
+            })
+        }) {
+            return Ok(
+                json!({"notice":format!("{} is already requested; left running.", automatic.rule.name)}),
+            );
+        }
+    }
     if let Some(rows) = &rows {
         check_port_conflict(operation, rows)?;
     }
@@ -196,6 +232,13 @@ fn perform(catalog: &Catalog, operation: &Operation) -> Result<Value> {
     } else if operation.command == "restart" {
         background::call(&operation.directory, "stop", operation.args.clone())?;
         background::call(&operation.directory, "start", operation.args.clone())
+    } else if operation.automatic.is_some() {
+        background::exchange(
+            &operation.directory,
+            operation.command,
+            operation.args.clone(),
+            Duration::from_secs(5),
+        )
     } else {
         background::call(
             &operation.directory,
@@ -285,6 +328,7 @@ fn quick_operation(entry: &Entry, rows: &[Entry], text: &str) -> Result<Operatio
         directory: entry.machine.directory.clone(),
         command: "upsert",
         args: json!({"rule":rule,"expected":previous,"start":true}),
+        automatic: None,
     };
     check_port_conflict(&operation, rows)?;
     Ok(operation)
@@ -341,8 +385,17 @@ pub struct Presentation<'a> {
     pub notice: &'a str,
     pub busy: bool,
     pub persistent: bool,
+    pub automatic: &'a VecDeque<Pending>,
+    pub automatic_errors: &'a BTreeMap<(PathBuf, String), String>,
 }
 pub fn render(frame: &mut ratatui::Frame, view: &Presentation<'_>) {
+    render_named(frame, view, None);
+}
+fn render_named(
+    frame: &mut ratatui::Frame,
+    view: &Presentation<'_>,
+    names: Option<&crate::service_name::Inspector>,
+) {
     let Presentation {
         rows,
         selected,
@@ -351,6 +404,8 @@ pub fn render(frame: &mut ratatui::Frame, view: &Presentation<'_>) {
         notice,
         busy,
         persistent,
+        automatic,
+        automatic_errors,
     } = *view;
     let areas = Layout::vertical([
         Constraint::Length(3),
@@ -384,67 +439,41 @@ pub fn render(frame: &mut ratatui::Frame, view: &Presentation<'_>) {
         ),
         areas[1],
     );
-    let table = rows.iter().map(|entry| {
-        let color = match entry.state.as_str() {
-            "ON" => Color::Green,
-            "CONNECTING" | "RETRYING" => Color::Yellow,
-            "ERROR" => Color::Red,
-            _ => MUTED,
-        };
-        let (name, local, remote) = entry
-            .rule
-            .as_ref()
-            .map(|r| {
-                (
-                    r.name.clone(),
-                    r.local_port.to_string(),
-                    r.remote_port.to_string(),
-                )
-            })
-            .unwrap_or((
-                "No favorites — press A".into(),
-                String::new(),
-                String::new(),
-            ));
-        Row::new([
-            Cell::from(entry.machine.name.clone()).style(Style::default().fg(ACCENT)),
-            Cell::from(entry.state.clone()).style(Style::default().fg(color)),
-            Cell::from(name),
-            Cell::from(local),
-            Cell::from("→"),
-            Cell::from(remote),
-        ])
-    });
-    frame.render_stateful_widget(
-        Table::new(
-            table,
-            [
-                Constraint::Percentage(25),
-                Constraint::Length(11),
-                Constraint::Min(12),
-                Constraint::Length(7),
-                Constraint::Length(2),
-                Constraint::Length(7),
-            ],
-        )
-        .header(
-            Row::new(["SERVER", "STATE", "FAVORITE", "LOCAL", "", "REMOTE"])
-                .style(Style::default().fg(MUTED)),
-        )
-        .block(screen::panel(" Saved connections "))
-        .row_highlight_style(Style::default().bg(Color::Rgb(37, 49, 67)))
-        .highlight_symbol("› "),
-        areas[2],
-        &mut TableState::default().with_selected(Some(selected)),
-    );
+    crate::connection_list::render_named(frame, areas[2], rows, selected, automatic, names);
     let detail=rows.get(selected).map(|entry|if entry.details.is_empty(){entry.rule.as_ref().map(|r|format!("{} · http://127.0.0.1:{} → {}:{}\nON confirms the local SSH listener. The app on the server must also be running.",r.name,r.local_port,entry.machine.target,r.remote_port)).unwrap_or_else(||"Press A to add a favorite for this machine.".into())}else{entry.details.clone()}).unwrap_or_default();
+    let detail = format!(
+        "{detail}\nOpen automatically: {} (F2 settings)",
+        rows.get(selected)
+            .map_or("off", |entry| if entry.open_automatically {
+                "on"
+            } else {
+                "off"
+            })
+    );
+    let detail = if let Some(error) = rows.get(selected).and_then(|entry| {
+        entry.rule.as_ref().and_then(|rule| {
+            automatic_errors.get(&(entry.machine.directory.clone(), rule.id.clone()))
+        })
+    }) {
+        format!("Automatic opening: {error}\n{detail}")
+    } else {
+        detail
+    };
     frame.render_widget(
         Paragraph::new(detail)
             .wrap(Wrap { trim: false })
             .style(Style::default().fg(MUTED)),
         areas[3],
     );
-    frame.render_widget(Paragraph::new(format!("Enter on/off · N quick · A add · E edit · D delete · B browser · H machines · ? help · Q close\n{}{}",if busy{"Working… "}else{""},notice)).wrap(Wrap{trim:false}).style(Style::default().fg(ACCENT)),areas[4]);
+    let automatic_summary = if automatic_errors.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "{} automatic openings need attention; select a row for details. ",
+            automatic_errors.len()
+        )
+    };
+    frame.render_widget(Paragraph::new(format!("Enter on/off · N quick · A add · E edit · D delete · B URL · T title · H machines · F2 settings · ? help · Q close\n{automatic_summary}{}{}",if busy{"Working… "}else{""},notice)).wrap(Wrap{trim:false}).style(Style::default().fg(ACCENT)),areas[4]);
 }
 fn open_browser(port: u16) -> Result<()> {
     let url = format!("http://127.0.0.1:{port}");
@@ -473,6 +502,75 @@ fn open_browser(port: u16) -> Result<()> {
     }
     Ok(())
 }
+
+fn settings(terminal: &mut screen::Screen, entry: &Entry) -> Result<bool> {
+    let old_scope = views::read_scope(&entry.machine.directory)?;
+    let old_auto = Preferences::load(&entry.machine.directory);
+    let editable = entry.rule.is_some() && old_auto.is_ok();
+    let mut scope = old_scope.clone();
+    let original = entry
+        .rule
+        .as_ref()
+        .is_some_and(|rule| old_auto.as_ref().is_ok_and(|p| p.enabled(&rule.id)));
+    let mut enabled = original;
+    let mut selected = usize::from(!editable);
+    loop {
+        terminal.draw(|frame| {
+            let area = screen::centered(frame.area(), 76, 14);
+            frame.render_widget(Clear, area);
+            frame.render_widget(screen::panel(" Settings "), area);
+            let body = area.inner(ratatui::layout::Margin::new(2, 1));
+            let favorite = entry.rule.as_ref().map(|rule| rule.name.as_str()).unwrap_or("Choose a saved favorite first");
+            let text = format!("{} / {favorite}\n\n{} [{}] Open automatically\n    Connect when a new Ports view opens.\n{} Return shortcut: {}\n\nStop keeps this preference for the next new view.\nSpace changes selection; arrows choose a setting.\nEnter saves; Esc cancels.",
+                entry.machine.name, if selected == 0 { ">" } else { " " },
+                if !editable { "unavailable" } else if enabled { "x" } else { " " },
+                if selected == 1 { ">" } else { " " },
+                if scope == "window" { "this window" } else { "across windows" });
+            frame.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), body);
+        })?;
+        let Some(Event::Key(key)) = screen::key()? else {
+            continue;
+        };
+        if screen::quit(key) || key.code == KeyCode::Esc {
+            return Ok(false);
+        }
+        match key.code {
+            KeyCode::Up | KeyCode::Down | KeyCode::Tab => {
+                selected = if selected == 0 || !editable { 1 } else { 0 };
+            }
+            KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right => {
+                if selected == 0 {
+                    enabled = !enabled;
+                } else {
+                    scope = if scope == "all" { "window" } else { "all" }.into();
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(rule) = &entry.rule
+                    && editable
+                    && enabled != original
+                {
+                    auto_open::set(&entry.machine.directory, &rule.id, enabled)?;
+                }
+                if scope != old_scope {
+                    views::save_scope(&entry.machine.directory, &scope)?;
+                }
+                return Ok(true);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn automatic_operation(pending: Pending) -> Operation {
+    Operation {
+        directory: pending.machine.directory.clone(),
+        command: "start",
+        args: json!({"rule_id":pending.rule.id}),
+        automatic: Some(pending),
+    }
+}
+
 pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     let store = Store::load(&machine.directory)?;
     let persistent = store.settings.keep_alive && !foreground;
@@ -517,16 +615,35 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
         };
     let mut registered_machine = machine.id.clone();
     let mut session = screen::Session::enter()?;
+    // Focus-existing returned before this function. This queue is never rebuilt
+    // by a poll, machine picker, settings save or controller reconnection.
+    let displayed = if persistent {
+        catalog.list()?
+    } else {
+        vec![machine.clone()]
+    };
+    let (mut automatic, warnings) = auto_open::collect(&displayed);
     let mut quick = Input::default();
     let mut typing = false;
-    let mut notice = String::new();
-    let mut pending: Option<Operation> = None;
+    let mut notice = warnings.join("; ");
+    let mut pending: VecDeque<Operation> = VecDeque::new();
     let mut polling = false;
     let mut changing = false;
+    let mut active_automatic: Option<Pending> = None;
+    let mut active_stop: Option<(PathBuf, String)> = None;
+    let mut automatic_errors = BTreeMap::new();
     let mut closing = false;
     let mut next_poll = Instant::now();
     let mut generation = 0_u64;
+    let mut names = crate::service_name::Inspector::default();
     loop {
+        if !closing
+            && !changing
+            && pending.is_empty()
+            && let Some(item) = automatic.pop_front()
+        {
+            pending.push_back(automatic_operation(item));
+        }
         if let Some(worker) = &worker {
             if let Ok(update) = worker.receiver.try_recv() {
                 match &update {
@@ -536,26 +653,66 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                 match update {
                     Update::Rows(epoch, _) if epoch != generation => {}
                     Update::Rows(_, Ok(updated)) => {
+                        automatic_errors.retain(|(directory, id), _| {
+                            updated.iter().any(|entry| {
+                                entry.machine.directory == *directory
+                                    && entry.rule.as_ref().is_some_and(|rule| rule.id == *id)
+                                    && entry.state != "ON"
+                            })
+                        });
                         let before = rows.get(selected).map(identity);
                         selected = select_previous(&updated, before, selected);
                         rows = updated;
                     }
                     Update::Changed(Ok(snapshot)) => {
+                        if let Some(item) = &active_automatic
+                            && snapshot["states"][&item.rule.id] == "ERROR"
+                        {
+                            automatic_errors.insert(
+                                (item.machine.directory.clone(), item.rule.id.clone()),
+                                snapshot["details"][&item.rule.id]
+                                    .as_str()
+                                    .unwrap_or("Could not start the forward.")
+                                    .into(),
+                            );
+                        }
                         generation = generation.wrapping_add(1);
-                        notice = if snapshot.get("rule_id").is_some() {
+                        notice = if let Some(message) = snapshot["notice"].as_str() {
+                            message.into()
+                        } else if let Some(item) = &active_automatic {
+                            format!("Opening {} automatically.", item.rule.name)
+                        } else if snapshot.get("rule_id").is_some() {
                             "Favorite saved".into()
                         } else {
                             "Updated".into()
                         };
                         next_poll = Instant::now();
                     }
-                    Update::Rows(_, Err(error)) | Update::Changed(Err(error)) => {
-                        notice = format!("{error:#}")
+                    Update::Changed(Err(error)) => {
+                        if let Some(item) = &active_automatic {
+                            automatic_errors.insert(
+                                (item.machine.directory.clone(), item.rule.id.clone()),
+                                format!("{error:#}"),
+                            );
+                        }
+                        notice = format!("{error:#}");
                     }
+                    Update::Rows(_, Err(error)) => notice = format!("{error:#}"),
+                }
+                if !changing {
+                    active_automatic = None;
+                    active_stop = None;
                 }
             }
-            if !changing && let Some(operation) = pending.take() {
+            if !changing && let Some(operation) = pending.pop_front() {
                 generation = generation.wrapping_add(1);
+                active_automatic = operation.automatic.clone();
+                active_stop = (operation.command == "stop").then(|| {
+                    (
+                        operation.directory.clone(),
+                        operation.args["rule_id"].as_str().unwrap_or("").to_owned(),
+                    )
+                });
                 worker.changes.send(operation)?;
                 changing = true;
             }
@@ -565,8 +722,11 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                 next_poll = Instant::now() + Duration::from_millis(750);
             }
         } else if let Some(local) = &mut local {
-            if let Some(operation) = pending.take() {
+            if let Some(operation) = pending.pop_front() {
                 let result = (|| -> Result<Value> {
+                    if let Some(automatic) = &operation.automatic {
+                        automatic.validate()?;
+                    }
                     let current = entries(&machine, Some(&local.snapshot()), None)?;
                     let operation = resolve_operation(&operation, &current)?;
                     if operation.command == "restart" {
@@ -578,19 +738,48 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     }
                 })();
                 match result {
-                    Ok(_) => notice = "Updated".into(),
-                    Err(error) => notice = format!("{error:#}"),
+                    Ok(snapshot) => {
+                        if let Some(item) = &operation.automatic
+                            && snapshot["states"][&item.rule.id] == "ERROR"
+                        {
+                            automatic_errors.insert(
+                                (item.machine.directory.clone(), item.rule.id.clone()),
+                                snapshot["details"][&item.rule.id]
+                                    .as_str()
+                                    .unwrap_or("Could not start the forward.")
+                                    .into(),
+                            );
+                        }
+                        notice = "Updated".into();
+                    }
+                    Err(error) => {
+                        if let Some(item) = &operation.automatic {
+                            automatic_errors.insert(
+                                (item.machine.directory.clone(), item.rule.id.clone()),
+                                format!("{error:#}"),
+                            );
+                        }
+                        notice = format!("{error:#}");
+                    }
                 }
             }
             if Instant::now() >= next_poll {
                 local.manager.poll(Instant::now());
                 let snapshot = local.snapshot();
                 rows = entries(&machine, Some(&snapshot), None)?;
+                automatic_errors.retain(|(directory, id), _| {
+                    rows.iter().any(|entry| {
+                        entry.machine.directory == *directory
+                            && entry.rule.as_ref().is_some_and(|rule| rule.id == *id)
+                            && entry.state != "ON"
+                    })
+                });
                 selected = selected.min(rows.len().saturating_sub(1));
                 next_poll = Instant::now() + Duration::from_millis(250);
             }
         }
-        if closing && !changing && pending.is_none() {
+        names.poll(&rows);
+        if closing && !changing && pending.is_empty() {
             break;
         }
         if let Some(entry) = rows.get(selected)
@@ -607,7 +796,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
             registered_machine = entry.machine.id.clone();
         }
         session.terminal.draw(|frame| {
-            render(
+            render_named(
                 frame,
                 &Presentation {
                     rows: &rows,
@@ -615,10 +804,14 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     quick: &quick,
                     typing,
                     notice: &notice,
-                    busy: changing || pending.is_some(),
+                    busy: changing || !pending.is_empty(),
                     persistent,
+                    automatic: &automatic,
+                    automatic_errors: &automatic_errors,
                 },
-            )
+                Some(&names),
+            );
+            names.draw(frame);
         })?;
         let event = screen::key()?;
         if matches!(event, Some(Event::Key(_) | Event::FocusGained))
@@ -639,17 +832,22 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
             continue;
         };
         if screen::quit(key) {
+            names.close();
+            automatic.clear();
             closing = true;
             continue;
         }
         if closing {
             continue;
         }
+        if names.key(key) {
+            continue;
+        }
         let entry = rows.get(selected).cloned();
         if typing {
             match key.code {
                 KeyCode::Esc => typing = false,
-                KeyCode::Enter if pending.is_none() && !changing => {
+                KeyCode::Enter if pending.is_empty() && !changing => {
                     let result = (|| -> Result<Operation> {
                         let entry = entry.as_ref().context("Choose a machine first.")?;
                         // Validate immediately, but resolve an existing mapping
@@ -660,11 +858,12 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                             directory: entry.machine.directory.clone(),
                             command: "quick",
                             args: json!({"text":quick.value}),
+                            automatic: None,
                         })
                     })();
                     match result {
                         Ok(operation) => {
-                            pending = Some(operation);
+                            pending.push_back(operation);
                             quick.clear();
                             typing = false;
                         }
@@ -675,8 +874,50 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
             }
             continue;
         }
+        if let Some(entry) = &entry
+            && let Some(rule) = &entry.rule
+        {
+            let queued = automatic
+                .iter()
+                .any(|item| item.matches(&entry.machine, rule));
+            let starting = active_automatic
+                .as_ref()
+                .is_some_and(|item| item.matches(&entry.machine, rule));
+            if matches!(key.code, KeyCode::Enter | KeyCode::Char(' '))
+                && (queued || starting || (changing && requested(&entry.state)))
+            {
+                automatic.retain(|item| !item.matches(&entry.machine, rule));
+                if starting || requested(&entry.state) {
+                    let key = (entry.machine.directory.clone(), rule.id.clone());
+                    if active_stop.as_ref() != Some(&key)
+                        && !pending.iter().any(|operation| {
+                            operation.command == "stop"
+                                && operation.directory == key.0
+                                && operation.args["rule_id"] == key.1
+                        })
+                    {
+                        pending.push_back(Operation {
+                            directory: entry.machine.directory.clone(),
+                            command: "stop",
+                            args: json!({"rule_id":rule.id}),
+                            automatic: None,
+                        });
+                    }
+                    notice = "Stopping after the current request finishes.".into();
+                } else {
+                    notice = "Automatic opening cancelled for this view; preference kept.".into();
+                }
+                continue;
+            }
+            if matches!(key.code, KeyCode::Char('r' | 'd')) {
+                automatic.retain(|item| !item.matches(&entry.machine, rule));
+            }
+        }
         match key.code {
-            KeyCode::Char('q') => closing = true,
+            KeyCode::Char('q') => {
+                automatic.clear();
+                closing = true;
+            }
             KeyCode::Up | KeyCode::Char('k') => selected = selected.saturating_sub(1),
             KeyCode::Down | KeyCode::Char('j') => {
                 selected = (selected + 1).min(rows.len().saturating_sub(1))
@@ -706,19 +947,15 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
             }
             KeyCode::F(2) => {
                 if let Some(entry) = &entry {
-                    let scope = views::read_scope(&entry.machine.directory)
-                        .unwrap_or_else(|_| "all".into());
-                    if let Some(values) = screen::form(
-                        &mut session.terminal,
-                        " Return shortcut scope ",
-                        &[("all = across windows; window = this window", scope)],
-                        0,
-                        "Windows Terminal: return to the last-used matching view.",
-                    )? {
-                        match views::save_scope(&entry.machine.directory, values[0].trim()) {
-                            Ok(()) => notice = "Return shortcut preference saved.".into(),
-                            Err(error) => notice = error.to_string(),
+                    match settings(&mut session.terminal, entry) {
+                        Ok(true) => {
+                            notice =
+                                "Settings saved. Automatic opening applies to the next new view."
+                                    .into();
+                            next_poll = Instant::now();
                         }
+                        Ok(false) => {}
+                        Err(error) => notice = format!("{error:#}"),
                     }
                 }
             }
@@ -729,14 +966,21 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     notice = error.to_string();
                 }
             }
-            _ if pending.is_some() || changing => {
+            _ if (!pending.is_empty() || changing) && key.code != KeyCode::Char('s') => {
                 notice = "Wait for the current change to finish.".into()
+            }
+            KeyCode::Char('t') => {
+                if let Some(entry) = &entry
+                    && let Err(error) = names.open(entry, persistent)
+                {
+                    notice = format!("{error:#}");
+                }
             }
             KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('r') => {
                 if let Some(entry) = &entry
                     && let Some(rule) = &entry.rule
                 {
-                    pending = Some(Operation {
+                    pending.push_back(Operation {
                         directory: entry.machine.directory.clone(),
                         command: if key.code == KeyCode::Char('r') {
                             "restart"
@@ -746,60 +990,60 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                             "start"
                         },
                         args: json!({"rule_id":rule.id}),
+                        automatic: None,
                     });
                 }
             }
-            KeyCode::Char('a' | 'e') => {
-                if let Some(entry) = &entry {
-                    let previous = if key.code == KeyCode::Char('e') {
-                        entry.rule.clone()
-                    } else {
-                        None
-                    };
-                    if key.code == KeyCode::Char('e') && previous.is_none() {
-                        continue;
+            KeyCode::Char('e') => {
+                if let Some(entry) = &entry
+                    && let Some(previous) = &entry.rule
+                {
+                    names.reset(entry);
+                    let directory = entry.machine.directory.clone();
+                    let model = forward_form::Model::new(&directory, previous.clone());
+                    let result = forward_form::edit(
+                        &mut session.terminal,
+                        &entry.machine.name,
+                        model,
+                        |request| {
+                            forward_form::save(&directory, request, |rule, expected| {
+                                let args = json!({"rule":rule,"expected":expected,"start":false});
+                                if let Some(local) = &mut local {
+                                    local.local("upsert", args)
+                                } else {
+                                    perform(
+                                        &catalog,
+                                        &Operation {
+                                            directory: directory.clone(),
+                                            command: "upsert",
+                                            args,
+                                            automatic: None,
+                                        },
+                                    )
+                                }
+                            })
+                        },
+                    )?;
+                    if let Some(message) = result {
+                        notice = message;
+                        generation = generation.wrapping_add(1);
+                        next_poll = Instant::now();
                     }
+                }
+            }
+            KeyCode::Char('a') => {
+                if let Some(entry) = &entry {
                     let fields = [
-                        (
-                            "App port on server",
-                            previous
-                                .as_ref()
-                                .map(|r| r.remote_port.to_string())
-                                .unwrap_or_default(),
-                        ),
-                        (
-                            "Port on this computer (blank uses same)",
-                            previous
-                                .as_ref()
-                                .map(|r| r.local_port.to_string())
-                                .unwrap_or_default(),
-                        ),
-                        (
-                            "Name (optional)",
-                            previous
-                                .as_ref()
-                                .map(|r| r.name.clone())
-                                .unwrap_or_default(),
-                        ),
+                        ("App port on server", String::new()),
+                        ("Port on this computer (blank uses same)", String::new()),
+                        ("Name (optional)", String::new()),
                     ];
                     if let Some(values) = screen::form(
                         &mut session.terminal,
-                        if previous.is_some() {
-                            " Edit favorite "
-                        } else {
-                            " Add favorite "
-                        },
+                        " Add favorite ",
                         &fields,
-                        usize::from(previous.is_some()),
-                        &format!(
-                            "Server: {} · {}",
-                            entry.machine.name,
-                            if previous.is_some() {
-                                "Save changes"
-                            } else {
-                                "Save and connect"
-                            }
-                        ),
+                        0,
+                        &format!("Server: {} · Save and connect", entry.machine.name),
                     )? {
                         let result = (|| -> Result<Forward> {
                             let remote = store::port(values[0].trim())?;
@@ -808,20 +1052,15 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                             } else {
                                 store::port(values[1].trim())?
                             };
-                            let mut rule = Forward::new(local, remote, &values[2])?;
-                            if let Some(previous) = &previous {
-                                rule.id = previous.id.clone();
-                            }
-                            Ok(rule)
+                            Forward::new(local, remote, &values[2])
                         })();
                         match result {
-                            Ok(rule) => {
-                                pending = Some(Operation {
-                                    directory: entry.machine.directory.clone(),
-                                    command: "upsert",
-                                    args: json!({"rule":rule,"expected":previous,"start":previous.is_none()}),
-                                })
-                            }
+                            Ok(rule) => pending.push_back(Operation {
+                                directory: entry.machine.directory.clone(),
+                                command: "upsert",
+                                args: json!({"rule":rule,"expected":null,"start":true}),
+                                automatic: None,
+                            }),
                             Err(error) => notice = error.to_string(),
                         }
                     }
@@ -840,10 +1079,11 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                         true,
                     )?
                 {
-                    pending = Some(Operation {
+                    pending.push_back(Operation {
                         directory: entry.machine.directory.clone(),
                         command: "delete",
                         args: json!({"rule_id":rule.id,"expected":rule}),
+                        automatic: None,
                     });
                 }
             }
@@ -860,7 +1100,8 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                         true,
                     )?
                 {
-                    pending = Some(Operation {
+                    automatic.clear();
+                    pending.push_back(Operation {
                         directory: entry.machine.directory.clone(),
                         command: if persistent {
                             "stop_listed"
@@ -873,6 +1114,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                         } else {
                             json!({})
                         },
+                        automatic: None,
                     });
                 }
             }
@@ -881,4 +1123,4 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     }
     Ok(())
 }
-const HELP: &str = "Quick entry: type 8000 then Enter, or 18000:8000 API. The first number is local; the second is the server's app port. A opens the full form.\n\n↑/↓ select · Enter/Space start or stop · N quick entry\nA add favorite · E edit · D delete · B open local URL\nR reconnect · S stop all listed servers · H manage machines\nF2 return shortcut scope · Q / Ctrl+Q close view\n\nFavorites start OFF. Started forwards retry network failures after 2 seconds, increasing to at most 30 seconds. Enter stops pending retries. Authentication, host-key and occupied-port errors need attention.\n\nBackground is on by default. Closing a tab or the entire terminal leaves the controller running. Signing out or rebooting ends it. --foreground stops the view's connections when it closes.\n\nFor first-time host trust or login problems, run ssh YOUR_ALIAS in a shell. Encrypted keys need ssh-agent. ON confirms an owned local listener, not the health of the remote app.";
+const HELP: &str = "Quick entry: type 8000 then Enter, or 18000:8000 API. The first number is local; the second is the server's app port. A opens the full form.\n\n↑/↓ select · Enter/Space start or stop · N quick entry\nA add favorite · E edit · D delete · B open local URL · T check web app name\nR reconnect · S stop all listed servers · H manage machines\nF2 settings / open automatically · Q / Ctrl+Q close view\n\nFavorites start OFF unless Open automatically is enabled in F2 Settings. A new view applies that preference once; refresh never does. Enter cancels a QUEUED item; Q and S cancel unsent opening work. Stop keeps the preference for the next new view. Started forwards retry network failures after 2 seconds, increasing to at most 30 seconds. Enter stops pending retries. Authentication, host-key and occupied-port errors need attention.\n\nBackground is on by default. Closing a tab or the entire terminal leaves the controller running. Signing out or rebooting ends it. --foreground stops the view's connections when it closes.\n\nT reads one HTML page from the selected ON local forward. Enter keeps the saved name; U uses its title in this view only. E restores the saved name. No title is saved and no forward is changed.\n\nFor first-time host trust or login problems, run ssh YOUR_ALIAS in a shell. Encrypted keys need ssh-agent. ON confirms an owned local listener, not the health of the remote app.";

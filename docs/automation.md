@@ -18,6 +18,8 @@ ports machines add workbox --json
 ports save --machine MACHINE_ID --remote 8000 --name API --json
 ports start FAVORITE_ID --machine MACHINE_ID --json
 ports stop FAVORITE_ID --machine MACHINE_ID --json
+ports auto-open FAVORITE_ID --machine MACHINE_ID --on --json
+ports auto-open FAVORITE_ID --machine MACHINE_ID --off --json
 ports delete FAVORITE_ID --machine MACHINE_ID --yes --json
 ```
 
@@ -29,6 +31,22 @@ writes require `--machine`; they never guess from terminal focus or a row number
 controller to serialize edits. Reusing a mapping retains its ID; renaming an
 active favorite may restart its SSH process. `start` waits up to five seconds
 for a listener. Use `--wait 0` to return immediately, or up to 30 seconds.
+
+`auto-open` changes only that favorite's **Open automatically** preference.
+Exactly one of `--on` or `--off` is required. It does not start a controller or
+change an existing connection. `list --json` includes `open_automatically`
+on every favorite (default `false`). Invalid preference metadata is reported in
+`automatic_opening_warning`; it is not silently reset.
+
+Only opening a genuinely new TUI applies opted-in favorites, once across the
+machines displayed at launch. Refreshes, machine selection within an existing
+view, CLI commands and focusing an already-open view never apply them. Stop
+leaves the preference enabled for the next new view. The TUI-only QUEUED label
+is pending launch work, not a new controller/JSON state.
+
+The TUI's **T** title preview and **U** display choice have no CLI equivalent.
+They never change the saved `name` returned in JSON. Agents should use explicit
+saved names; opening or listing Ports does not probe web pages.
 
 ## Results and exit codes
 
@@ -80,4 +98,3 @@ An example instruction for your agent:
 > Read AGENTS.md and run ports doctor --json. Use my existing SSH alias workbox,
 > save remote port 8000 as API, then start it. Report the observed state and local
 > browser address. Preserve all other favorites and running connections.
-

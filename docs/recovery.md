@@ -10,7 +10,9 @@ When the route becomes reachable, it recreates the same forward—even with the
 view closed. Detection and login also take time.
 
 **Enter stops retries**, **R retries now**, and **S stops all listed servers**.
-OFF favorites stay OFF. A connection must stay healthy for 30 seconds before
+OFF favorites stay OFF during refresh. A new view may start favorites you
+explicitly opted into **F2 → Open automatically**; Stop keeps that preference.
+A connection must stay healthy for 30 seconds before
 its retry delay resets. Authentication failures, changed or untrusted host
 keys, and occupied local ports show ERROR. Fix the cause before restarting.
 
@@ -18,6 +20,8 @@ A restored forward cannot restore an interrupted application connection. Refresh
 your browser or reconnect your database client if needed. Reboot, sign-out and
 a terminated controller end running connections; they do not automatically
 restore active state.
+Opening Ports after reboot can apply your opted-in favorites again; this is
+not an OS login service, and opening a shell without Ports does not start them.
 
 ## Updating
 
@@ -52,4 +56,3 @@ Parent setups should follow the leaf versions recorded by their own installation
 - **Controller fails to detach:** a restrictive host application may forbid
   background child processes. Try a normal terminal, or use `--foreground` and
   keep that view open. Report the terminal and OS in an issue.
-

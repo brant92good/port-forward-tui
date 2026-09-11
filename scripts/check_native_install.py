@@ -18,7 +18,7 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--bundle', type=Path)
     mode.add_argument('--release', action='store_true')
-    parser.add_argument('--version', default='0.7.3')
+    parser.add_argument('--version', default='0.9.1')
     parser.add_argument('--ref')
     parser.add_argument('--with-path', action='store_true')
     options = parser.parse_args()
@@ -68,6 +68,12 @@ def main():
             return result.stdout
         install()
         assert run('--version').strip() == 'ports '+options.version
+        notices = {}
+        if tuple(int(part) for part in options.version.split('-')[0].split('.')) >= (0, 9, 0):
+            for name in ('LICENSE.txt', 'THIRD_PARTY_NOTICES.txt'):
+                data_bytes = (installed/'bin'/name).read_bytes()
+                assert data_bytes.strip(), name+' is empty'
+                notices[name] = data_bytes
         created = json.loads(run('--data-dir',str(data),'machines','add','demo.invalid','--name','Demo','--json'))
         identifier = created['machine']['id']
         machine = json.loads(run('--data-dir',str(data),'--machine',identifier,'machines','pick','--no-window-context','--json'))['machine']
@@ -82,10 +88,14 @@ def main():
         assert store.read_bytes() == before
         assert json.loads(run('--data-dir',str(data),'list','--json')) == listing
         assert (installed/'notes.txt').read_text() == 'user data'
+        for name, contents in notices.items():
+            assert (installed/'bin'/name).read_bytes() == contents
         binary_hash = hashlib.sha256(executable.read_bytes()).hexdigest()
         install(expected='0'*64,success=False)
         assert hashlib.sha256(executable.read_bytes()).hexdigest() == binary_hash
         assert store.read_bytes() == before
+        for name, contents in notices.items():
+            assert (installed/'bin'/name).read_bytes() == contents
         unowned = root/'not-owned'; unowned.mkdir(); (unowned/'keep.txt').write_text('other project')
         install(destination=unowned,success=False)
         assert (unowned/'keep.txt').read_text() == 'other project'

@@ -1,5 +1,8 @@
 # Native CLI startup measurement
 
+For the 0.9 buffered screen writer, see the separate [frame output measurement](rendering.md).
+The older CLI comparison below does not measure that change.
+
 On this Windows desktop, a read-only saved-state query fell from **92.760 ms to
 17.929 ms median** after the Rust rewrite. That is 74.831 ms less, or about 81%.
 It is not a measurement of a new TUI's first frame, a return shortcut, or SSH

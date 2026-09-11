@@ -1,8 +1,10 @@
 //! Render the actual native widgets with example data; no network or user files.
 use anyhow::Result;
 use port_forward_tui::{
+    auto_open, forward_form,
     machines::Machine,
     screen::{self, Input},
+    service_name::Inspector,
     store::Forward,
     ui::{self, Entry, Presentation},
 };
@@ -89,10 +91,11 @@ fn main() -> Result<()> {
             rule: Some(Forward::new(l, r, n)?),
             state: state.into(),
             details: String::new(),
+            open_automatically: false,
         })
     })
     .collect::<Result<Vec<_>>>()?;
-    let mut terminal = Terminal::new(TestBackend::new(112, 26))?;
+    let mut terminal = Terminal::new(TestBackend::new(120, 26))?;
     let quick = Input::default();
     terminal.draw(|frame| {
         ui::render(
@@ -105,6 +108,8 @@ fn main() -> Result<()> {
                 notice: "",
                 busy: false,
                 persistent: true,
+                automatic: &Default::default(),
+                automatic_errors: &Default::default(),
             },
         )
     })?;
@@ -125,6 +130,8 @@ fn main() -> Result<()> {
                 notice: "",
                 busy: false,
                 persistent: true,
+                automatic: &Default::default(),
+                automatic_errors: &Default::default(),
             },
         )
     })?;
@@ -158,6 +165,31 @@ fn main() -> Result<()> {
         &out.join("add-connection.svg"),
         "A · Add favorite form · example data",
     )?;
-    println!("Rendered native list, quick entry and add form with example data.");
+    let example = tempfile::tempdir()?;
+    let rule = rows[0].rule.clone().unwrap();
+    std::fs::write(
+        example.path().join(auto_open::FILE),
+        serde_json::to_vec(&serde_json::json!({"version":1,"open_automatically":[rule.id]}))?,
+    )?;
+    let edit = forward_form::Model::new(example.path(), rule);
+    form_terminal.draw(|frame| forward_form::render(frame, &edit, "Development", false))?;
+    save(
+        &form_terminal,
+        &out.join("edit-connection.svg"),
+        "E · Edit favorite · example data",
+    )?;
+    let inspector = Inspector::screenshot(
+        &rows[0],
+        "<html><head><title>Project dashboard</title></head></html>",
+    )?;
+    form_terminal.draw(|frame| inspector.draw(frame))?;
+    save(
+        &form_terminal,
+        &out.join("web-title.svg"),
+        "T · Web title preview · example data, no request made",
+    )?;
+    println!(
+        "Rendered native list, quick entry, add/edit forms and title preview with example data."
+    );
     Ok(())
 }

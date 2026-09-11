@@ -42,6 +42,18 @@ local HTTP address. Use `18000:8000 API` to choose another local port and a name
 Tab moves between fields. Adding through the form saves and connects; editing
 an active favorite restarts that mapping with the new values.
 
+Want selected favorites each time you open Ports? Select one, press **E**,
+Tab to **Open automatically**, toggle it with Space, then press Enter. F2 settings
+also has the same option. It starts disabled.
+Saving the preference leaves the current connection alone. A new view applies
+enabled favorites across listed machines; Stop keeps them off until you start
+them yourself or open another new view.
+
+For an ON web app, **T** previews its HTML page title. **U** uses the title only
+in this view, and Enter keeps the saved name. It is a manual HTTP check, not
+service discovery; it does not follow redirects, authenticate to a web app,
+use HTTPS or run JavaScript. Use E to save your own name for any service.
+
 ## Something did not work
 
 | Symptom | Next step |

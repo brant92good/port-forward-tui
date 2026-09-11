@@ -1,6 +1,6 @@
 param(
     [string]$InstallDir = $env:PORTS_INSTALL_DIR,
-    [string]$Version = $(if ($env:PORTS_VERSION) { $env:PORTS_VERSION } else { '0.7.3' }),
+    [string]$Version = $(if ($env:PORTS_VERSION) { $env:PORTS_VERSION } else { '0.9.1' }),
     [string]$Bundle = $env:PORTS_BUNDLE,
     [string]$Sha256 = $env:PORTS_SHA256,
     [switch]$NoPath = ($env:PORTS_NO_PATH -eq '1')
@@ -38,19 +38,26 @@ try {
     if ($Sha256 -notmatch '^[a-fA-F0-9]{64}$' -or (Get-PortsHash $portsArchive) -ne $Sha256.ToLowerInvariant()) { throw 'Download checksum mismatch. The existing installation was preserved.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $portsFiles = @('ports.exe','PortsFocus.exe','TerminalViews.exe')
+    $portsNotices = @('LICENSE.txt','THIRD_PARTY_NOTICES.txt')
+    $portsLegacyVersion = ([version]($Version.Split('-')[0])) -le ([version]'0.8.1')
     $portsZip = [IO.Compression.ZipFile]::OpenRead($portsArchive)
     try {
         $portsNames = @($portsZip.Entries | ForEach-Object { $_.FullName })
-        if ($portsNames.Count -ne 4 -or @($portsNames | Where-Object { $_ -notin ($portsFiles + 'SHA256SUMS') }).Count -or @($portsNames | Select-Object -Unique).Count -ne 4) { throw 'The Ports bundle has unexpected archive entries.' }
+        if ($portsNames.Count -eq 6) { $portsFiles += $portsNotices }
+        elseif ($portsNames.Count -eq 4 -and -not $portsLegacyVersion) { throw 'This Ports release requires both bundled license notices.' }
+        elseif ($portsNames.Count -ne 4) { throw 'The Ports bundle has unexpected archive entries or incomplete license notices.' }
+        if (@($portsNames | Where-Object { $_ -notin ($portsFiles + 'SHA256SUMS') }).Count -or @($portsNames | Select-Object -Unique).Count -ne ($portsFiles.Count + 1)) { throw 'The Ports bundle has unexpected archive entries.' }
     } finally { $portsZip.Dispose() }
     $portsPackage = Join-Path $portsStage 'package'
     [IO.Compression.ZipFile]::ExtractToDirectory($portsArchive,$portsPackage)
     $portsChecksums = @{}
     foreach ($portsLine in [IO.File]::ReadAllLines((Join-Path $portsPackage 'SHA256SUMS'))) {
-        if ($portsLine -notmatch '^([a-f0-9]{64})  (ports\.exe|PortsFocus\.exe|TerminalViews\.exe)$') { throw 'Invalid bundled checksum index.' }
+        if ($portsLine -notmatch '^([a-f0-9]{64})  (ports\.exe|PortsFocus\.exe|TerminalViews\.exe|LICENSE\.txt|THIRD_PARTY_NOTICES\.txt)$') { throw 'Invalid bundled checksum index.' }
+        if ($Matches[2] -notin $portsFiles) { throw 'Unexpected file in bundled checksum index.' }
         if ($portsChecksums.ContainsKey($Matches[2])) { throw 'Duplicate bundled checksum.' }
         $portsChecksums[$Matches[2]] = $Matches[1]
     }
+    if ($portsChecksums.Count -ne $portsFiles.Count) { throw 'Bundled checksum index is incomplete.' }
     foreach ($portsName in $portsFiles) {
         if ((Get-PortsHash (Join-Path $portsPackage $portsName)) -ne $portsChecksums[$portsName]) { throw "Invalid bundled file $portsName." }
     }

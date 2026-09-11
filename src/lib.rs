@@ -1,10 +1,14 @@
+pub mod auto_open;
 pub mod background;
 pub mod cli;
+pub mod connection_list;
+pub mod forward_form;
 pub mod forwarding;
 pub mod machines;
 pub mod picker;
 pub mod process;
 pub mod screen;
+pub mod service_name;
 pub mod store;
 pub mod ui;
 pub mod views;
