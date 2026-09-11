@@ -104,7 +104,16 @@ main() {
             cp -p "$install_root/bin/$file" "$stage/previous/$file"
         fi
     done
-    if [ -f "$install_root/bin/$command_name" ]; then cp -p "$install_root/bin/$command_name" "$install_root/bin/$command_name.previous"; fi
+    backup="$install_root/bin/$command_name.previous"
+    if [ -L "$backup" ] || { [ -e "$backup" ] && [ ! -f "$backup" ]; }; then
+        printf '%s\n' 'The previous-binary backup must be a regular file, not a link or directory.' >&2; return 1
+    fi
+    if [ -f "$install_root/bin/$command_name" ]; then
+        # Stage a new inode, then replace the pathname. Never truncate a backup
+        # that may have a hard link to another installation's binary.
+        cp -p "$install_root/bin/$command_name" "$stage/previous-binary"
+        mv -f "$stage/previous-binary" "$backup"
+    fi
     changed=''
     for file in $files; do
         if ! mv -f "$stage/$file" "$install_root/bin/$file"; then
@@ -116,8 +125,10 @@ main() {
         fi
         changed="$file $changed"
     done
-    printf '%s\n' "$owner" > "$install_root/.ports-installer"
-    printf '%s\n' "$version" > "$install_root/version"
+    printf '%s\n' "$owner" > "$stage/owner"
+    printf '%s\n' "$version" > "$stage/version"
+    mv -f "$stage/owner" "$install_root/.ports-installer"
+    mv -f "$stage/version" "$install_root/version"
     if [ "$channel" = stable ] && [ "${PORTS_NO_PATH:-0}" != 1 ]; then
         # Generate one sourceable PATH fragment; do not alter unrelated shell setup.
         quoted=$(printf '%s' "$install_root/bin" | sed "s/'/'\\\\''/g")

@@ -261,6 +261,9 @@ impl TunnelProcess for OwnedSsh {
         self.child.id()
     }
     fn exited(&mut self) -> Result<Option<i32>> {
+        #[cfg(unix)]
+        return Ok(platform::exited(&self.child)?);
+        #[cfg(windows)]
         Ok(self
             .child
             .try_wait()?

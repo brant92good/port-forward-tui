@@ -249,7 +249,31 @@ pub fn import_stable(source: &Path, destination: &Path) -> Result<Vec<Machine>> 
 
 fn publish_new_directory(source: &Path, destination: &Path) -> Result<()> {
     #[cfg(windows)]
-    fs::rename(source, destination)?; // MoveFileEx without REPLACE_EXISTING for directories.
+    {
+        use std::os::windows::ffi::OsStrExt;
+        fn wide(path: &Path) -> Result<Vec<u16>> {
+            let mut value: Vec<_> = path.as_os_str().encode_wide().collect();
+            ensure!(!value.contains(&0), "An import path contains NUL.");
+            value.push(0);
+            Ok(value)
+        }
+        let source = wide(source)?;
+        let destination = wide(destination)?;
+        // std::fs::rename may replace an empty destination directory. Request
+        // no replacement explicitly, including a destination created mid-import.
+        let result = unsafe {
+            windows_sys::Win32::Storage::FileSystem::MoveFileExW(
+                source.as_ptr(),
+                destination.as_ptr(),
+                0,
+            )
+        };
+        ensure!(
+            result != 0,
+            "Cannot publish import without replacing data: {}",
+            std::io::Error::last_os_error()
+        );
+    }
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
@@ -257,7 +281,11 @@ fn publish_new_directory(source: &Path, destination: &Path) -> Result<()> {
         let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())?;
         #[cfg(target_os = "linux")]
         let result = unsafe {
-            libc::renameat2(
+            // Rust's bundled musl need not export the renameat2 C wrapper.
+            // The kernel call preserves atomic NOREPLACE semantics; unsupported
+            // kernels/filesystems fail instead of falling back to replacement.
+            libc::syscall(
+                libc::SYS_renameat2,
                 libc::AT_FDCWD,
                 source.as_ptr(),
                 libc::AT_FDCWD,
@@ -275,4 +303,33 @@ fn publish_new_directory(source: &Path, destination: &Path) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+
+    #[test]
+    fn publication_preserves_existing_empty_directory_and_moves_to_new_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("favorite.json"), b"owned fixture").unwrap();
+        fs::create_dir(&destination).unwrap();
+        assert!(publish_new_directory(&source, &destination).is_err());
+        assert!(destination.is_dir());
+        assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+        assert_eq!(
+            fs::read(source.join("favorite.json")).unwrap(),
+            b"owned fixture"
+        );
+        fs::remove_dir(&destination).unwrap();
+        publish_new_directory(&source, &destination).unwrap();
+        assert!(!source.exists());
+        assert_eq!(
+            fs::read(destination.join("favorite.json")).unwrap(),
+            b"owned fixture"
+        );
+    }
 }

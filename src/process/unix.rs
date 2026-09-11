@@ -32,6 +32,30 @@ pub fn configure_daemon(command: &mut Command) {
     }
 }
 
+/// Observe only: keep the group leader unreaped until the final group signal,
+/// otherwise the OS could reuse its numeric PID for an unrelated process group.
+pub fn exited(child: &Child) -> std::io::Result<Option<i32>> {
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    let result = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            child.id() as libc::id_t,
+            &mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if unsafe { info.si_pid() } == 0 {
+        Ok(None)
+    } else if info.si_code == libc::CLD_EXITED {
+        Ok(Some(unsafe { info.si_status() }))
+    } else {
+        Ok(Some(-1))
+    }
+}
+
 pub struct Group {
     pid: Option<i32>,
 }
@@ -45,6 +69,11 @@ impl Group {
         let Some(pid) = self.pid.take() else {
             return;
         };
+        // ECHILD (or another observation error) means ownership cannot be
+        // established. Do not signal a potentially recycled numeric group ID.
+        if exited(child).is_err() {
+            return;
+        }
         // This child was created as its own process group; never signal a name,
         // a global process list, or a group inherited from the user's terminal.
         unsafe {
@@ -52,15 +81,65 @@ impl Group {
         }
         let deadline = Instant::now() + Duration::from_millis(300);
         while Instant::now() < deadline {
-            if child.try_wait().ok().flatten().is_some() {
-                break;
+            match exited(child) {
+                Ok(Some(_)) => break,
+                Ok(None) => {}
+                Err(_) => return,
             }
             thread::sleep(Duration::from_millis(10));
         }
-        unsafe {
-            libc::kill(-pid, libc::SIGKILL);
+        if exited(child).is_ok() {
+            unsafe {
+                libc::kill(-pid, libc::SIGKILL);
+            }
+            let _ = child.wait();
         }
-        let _ = child.wait();
+    }
+}
+
+#[cfg(test)]
+mod exit_tests {
+    use super::*;
+
+    #[test]
+    fn observation_retains_leader_until_group_stop_then_reaps_once() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "exit 17"]);
+        configure_ssh(&mut command);
+        let mut child = command.spawn().unwrap();
+        let mut group = Group::attach(&mut child).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while exited(&child).unwrap().is_none() {
+            assert!(Instant::now() < deadline, "owned child did not exit");
+            thread::sleep(Duration::from_millis(5));
+        }
+        for _ in 0..3 {
+            assert_eq!(exited(&child).unwrap(), Some(17));
+        }
+        group.stop(&mut child);
+        assert_eq!(
+            exited(&child).unwrap_err().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+        assert_eq!(child.wait().unwrap().code(), Some(17));
+        group.stop(&mut child);
+    }
+
+    #[test]
+    fn already_reaped_child_does_not_retain_group_signal_authority() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "exit 0"]);
+        configure_ssh(&mut command);
+        let mut child = command.spawn().unwrap();
+        let mut group = Group::attach(&mut child).unwrap();
+        child.wait().unwrap();
+        assert_eq!(
+            exited(&child).unwrap_err().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+        group.stop(&mut child);
+        assert!(group.pid.is_none());
+        group.stop(&mut child);
     }
 }
 

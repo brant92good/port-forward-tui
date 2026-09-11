@@ -91,19 +91,26 @@ try {
     New-Item -ItemType Directory -Path $portsBin -Force | Out-Null
     $portsTransaction = [Guid]::NewGuid().ToString('N')
     $portsChanges = New-Object Collections.Generic.List[object]
+    # Metadata joins the same replacement transaction. Writing existing paths
+    # in place could truncate another file through an ordinary hard link.
+    $portsNewMarker = Join-Path $portsStage 'new-owner'
+    $portsNewVersion = Join-Path $portsStage 'new-version'
+    [IO.File]::WriteAllText($portsNewMarker,$portsOwner)
+    [IO.File]::WriteAllText($portsNewVersion,$Version)
+    $portsInstallFiles = @($portsFiles | ForEach-Object { @{source=(Join-Path $portsPackage $_);path=(Join-Path $portsBin $_)} })
+    $portsInstallFiles += @{source=$portsNewMarker;path=$portsMarker}
+    $portsInstallFiles += @{source=$portsNewVersion;path=(Join-Path $InstallDir 'version')}
     try {
-        foreach ($portsName in $portsFiles) {
-            $portsDestination = Join-Path $portsBin $portsName
+        foreach ($portsFile in $portsInstallFiles) {
+            $portsDestination = $portsFile.path
             $portsPrevious = $null
             if (Test-Path -LiteralPath $portsDestination) {
                 $portsPrevious = $portsDestination + '.previous-' + $portsTransaction
                 Move-Item -LiteralPath $portsDestination -Destination $portsPrevious
             }
             $portsChanges.Add(@{path=$portsDestination;previous=$portsPrevious})
-            [IO.File]::Copy((Join-Path $portsPackage $portsName),$portsDestination)
+            [IO.File]::Copy($portsFile.source,$portsDestination)
         }
-        [IO.File]::WriteAllText($portsMarker,$portsOwner)
-        [IO.File]::WriteAllText((Join-Path $InstallDir 'version'),$Version)
     } catch {
         for ($portsIndex=$portsChanges.Count-1; $portsIndex -ge 0; $portsIndex--) {
             $portsChange = $portsChanges[$portsIndex]

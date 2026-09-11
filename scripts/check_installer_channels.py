@@ -97,6 +97,31 @@ def main():
         install('0.10.0-beta.1', 'beta', beta)  # explicit version rollback in this compatible inert fixture
         assert subprocess.check_output([str(beta_exe), '--version'], text=True, creationflags=FLAGS).strip() == 'ports 0.10.0-beta.1'
         assert (beta/'keep.txt').read_text() == 'beta settings unchanged'
+        if os.name != 'nt':
+            backup = beta/'bin/ports-beta.previous'
+            backup.unlink()
+            backup.symlink_to(stable/'bin/ports')
+            install('0.10.0-beta.2', 'beta', beta, False)
+            assert backup.is_symlink()
+            backup.unlink()
+            backup.mkdir()
+            install('0.10.0-beta.2', 'beta', beta, False)
+            assert not list(backup.iterdir())
+            backup.rmdir()
+            os.link(stable/'bin/ports', backup)
+        held_owner = root/'held-owner'
+        held_version = root/'held-version'
+        os.link(beta/'.ports-installer', held_owner)
+        os.link(beta/'version', held_version)
+        old_owner, old_version = held_owner.read_bytes(), held_version.read_bytes()
+        install('0.10.0-beta.2', 'beta', beta)
+        assert held_owner.read_bytes() == old_owner
+        assert held_version.read_bytes() == old_version
+        assert not os.path.samefile(beta/'.ports-installer', held_owner)
+        assert not os.path.samefile(beta/'version', held_version)
+        if os.name != 'nt':
+            assert not os.path.samefile(backup, stable/'bin/ports')
+        install('0.10.0-beta.1', 'beta', beta)
         before = beta_exe.read_bytes()
         install('0.10.0-beta.2', 'beta', beta, False, bad_hash=True)
         install('0.10.0-beta.2', 'beta', beta, False, pin='0.10.0-beta.1')

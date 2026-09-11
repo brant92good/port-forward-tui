@@ -131,7 +131,10 @@ fn metadata_import_is_explicit_transactional_and_leaves_active_state_behind() {
     let beta = temp.path().join("beta");
     let machines = channel::import_stable(&stable, &beta).unwrap();
     assert_eq!(machines.len(), 1);
-    assert_eq!(machines[0].directory, beta);
+    assert_eq!(
+        fs::canonicalize(&machines[0].directory).unwrap(),
+        fs::canonicalize(&beta).unwrap()
+    );
     assert_eq!(fs::read(beta.join("forwards.json")).unwrap(), original);
     assert_eq!(fs::read(stable.join("forwards.json")).unwrap(), original);
     assert_eq!(fs::read_dir(&beta).unwrap().count(), 2);
