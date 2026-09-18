@@ -169,6 +169,16 @@ public static class TerminalViews {
         return "";
     }
 
+    // Keep selection-provider access behind the cheap foreground check. The
+    // provider can take time, so an app switch during that read must also reject
+    // the observation. This does not make the later record write atomic.
+    internal static bool IsTrackedTabActive(long window, Func<long> foreground, Func<bool> selected) {
+        if (foreground() != window) return false;
+        bool isSelected = selected();
+        bool stillForeground = foreground() == window;
+        return isSelected && stillForeground;
+    }
+
     public static void Track(string path, string title, string runtimeId, int pid, string machine = "", string contextPath = "") {
         TerminalTabInfo tab = null;
         var deadline = DateTime.UtcNow.AddSeconds(6);
@@ -200,8 +210,12 @@ public static class TerminalViews {
             lock (gate) {
                 if (stopping) return;
                 try {
-                    var pattern = (SelectionItemPattern)tab.element.GetCurrentPattern(SelectionItemPattern.Pattern);
-                    bool active = GetForegroundWindow().ToInt64() == record.window && pattern.Current.IsSelected;
+                    bool active = IsTrackedTabActive(record.window,
+                        () => GetForegroundWindow().ToInt64(),
+                        () => {
+                            var pattern = (SelectionItemPattern)tab.element.GetCurrentPattern(SelectionItemPattern.Pattern);
+                            return pattern.Current.IsSelected;
+                        });
                     if (active && (force || !wasActive)) {
                         record.last_focus = DateTime.UtcNow.Ticks;
                         save();

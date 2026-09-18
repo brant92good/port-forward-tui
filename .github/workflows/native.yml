@@ -29,6 +29,10 @@ jobs:
       RUSTFLAGS: ${{ matrix.rustflags }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Background tracker foreground guard without desktop access
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./tests/tracker_observation.ps1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
