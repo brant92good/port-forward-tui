@@ -52,6 +52,28 @@ Want a remote tab, Ports, local sessions, and return shortcuts together?
 [Terminal Workspace](https://github.com/brant92good/terminal-workspace) adds that
 Windows integration. Ports also runs independently in your current terminal.
 
+## Keep the microphone on your desk. Run the voice app on your server.
+
+A remote shell carries your keystrokes. The **optional audio preview** also sends
+your Windows microphone to Linux and brings the program's audio back to your
+Windows output device. It uses your saved SSH connection.
+
+That opens up remote voice workflows: a coding assistant beside your dev server,
+a speech tool on a GPU machine, or an audio-enabled terminal app. Ports still
+handles everyday dev servers, notebooks and dashboards without audio installed.
+
+In the preview, the main screen shows **Audio: OFF [V]** for a configured machine.
+Press **V** for its controls, **Enter** to start, and **S** in the audio panel to
+stop. Opening Ports or reconnecting a port forward never turns on the microphone.
+
+**Available as Windows-to-Linux preview source, separate from the downloads above.**
+It needs FFmpeg/FFplay and an already prepared compatible Linux audio bridge;
+the Linux endpoint is not distributed here yet. Microphone transport, generated
+reply playback and stop/restoration were checked on Windows and Linux. A specific
+coding agent's voice mode has not been qualified.
+
+[Preview setup and what was tested](https://github.com/brant92good/port-forward-tui/blob/feat/audio-beta/docs/audio.md).
+
 ## First connection
 
 If you normally connect with `ssh workbox`, add or import `workbox`. Your SSH
@@ -76,7 +98,8 @@ directly in the main view.*
 - You switch between remote projects and keep reconstructing the same `ssh -L` commands.
 - Your dev servers and notebooks live on several machines.
 - You want forwards to survive closing a tab or the entire terminal.
-- You want a coding agent to manage the same saved connections through inspectable commands.
+- You use a coding agent to build on a remote machine and want its preview URLs close at hand.
+- You want scripts or agents to manage the same saved connections through inspectable commands.
 
 ## A few keys cover the daily work
 
@@ -165,8 +188,9 @@ owned SSH-shaped processes and their descendants, recovery, and keyboard flows
 in an OS pseudo-terminal. Published results separate those checks from real
 OpenSSH and desktop testing. [Verification details](docs/verification.md).
 
-Ports handles local TCP forwarding. It does not transfer files, provide remote
-or dynamic SOCKS forwarding, or start your remote app. For one temporary forward,
+The published 0.9.1 app handles local TCP forwarding. It does not transfer files,
+provide remote or dynamic SOCKS forwarding, or start your remote app. Audio
+is a separate optional preview. For one temporary forward,
 plain `ssh -L` is often enough.
 
 [Report a problem](https://github.com/brant92good/port-forward-tui/issues) ·
