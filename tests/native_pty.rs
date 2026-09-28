@@ -39,7 +39,9 @@ impl Session {
                 pixel_height: 0,
             })
             .unwrap();
-        let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_ports"));
+        let executable = std::env::var_os("PORTS_TEST_BINARY")
+            .unwrap_or_else(|| env!("CARGO_BIN_EXE_ports").into());
+        let mut command = CommandBuilder::new(executable);
         command.args(["--data-dir", root.to_str().unwrap(), "--machine", machine]);
         if foreground {
             command.arg("--foreground");
@@ -213,7 +215,8 @@ fn optional_audio_panel_is_disabled_and_does_not_start_capture() {
         .unwrap();
     let mut view = Session::with_mode(temp.path(), &machine.id, true);
     view.expect("Saved connections");
-    view.send("v");
+    view.expect("Audio: NOT CONFIGURED [V]");
+    view.send("V");
     view.expect("Audio is disabled by default");
     view.send("\r");
     view.expect("Audio is disabled by default");
@@ -222,6 +225,26 @@ fn optional_audio_panel_is_disabled_and_does_not_start_capture() {
     view.send("\x1b");
     view.expect("Saved connections");
     view.close();
+    let executable = std::env::current_exe().unwrap();
+    std::fs::write(
+        machine.directory.join("audio.json"),
+        serde_json::to_vec(&json!({
+            "version":1,"enabled":true,"microphone":"Fixture microphone (never opened)",
+            "remote_script":"/fixture/bridge.py","expected_host":"fixture",
+            "ffmpeg":executable,"ffplay":executable
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut view = Session::with_mode(temp.path(), &machine.id, true);
+    view.expect("Audio: OFF [V]");
+    view.send("v");
+    view.expect("State: OFF");
+    view.expect("Fixture microphone (never opened)");
+    view.send("\x1b");
+    view.close();
+    assert!(!machine.directory.join("audio-state.json").exists());
+    assert!(!machine.directory.join("audio-worker.log").exists());
 }
 
 #[test]

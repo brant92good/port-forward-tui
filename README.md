@@ -2,7 +2,7 @@
 
 # Ports BETA
 
-> **Audio preview source: 0.10.0-beta.2.** Optional Windows microphone/reply
+> **Audio preview source: 0.10.0-beta.3.** Optional Windows microphone/reply
 > forwarding is disabled by default. Press **V** to inspect its audio panel;
 > [setup and limitations](docs/audio.md). This preview is not yet a published
 > cross-platform release. The existing versioned downloads below are unchanged.
@@ -20,11 +20,10 @@ terminal closed.
 
 [Install](#install) · [First connection](#first-connection) · [SOCKS5 guide](docs/socks.md) · [Agent commands](#commands-for-your-agent)
 
-> **0.10.0-beta.1 source candidate:** SOCKS5 is a separate beta channel with its
-> own command, data and controllers. It does not upgrade the existing `ports`
-> installation. Qualification and beta downloads are not yet claimed here.
-> The [published 0.9.1 baseline](https://github.com/brant92good/port-forward-tui/blob/v0.9.1/README.md#install)
-> remains available without SOCKS. macOS remains beta.
+> **Separate channels:** the published **0.10.0-beta.1** download adds SOCKS5
+> with its own command, data and controllers. Audio is **0.10.0-beta.3 source**
+> and is not included in that download. The [published 0.9.1 baseline](https://github.com/brant92good/port-forward-tui/blob/v0.9.1/README.md#install)
+> remains available for fixed forwards. macOS remains beta.
 > [What was tested](docs/verification.md).
 
 ![Ports showing saved connections across servers](docs/screenshots/connections.svg)
@@ -35,10 +34,8 @@ terminal closed.
 
 ### Try the beta
 
-These commands target **0.10.0-beta.1**. Use them after its
-[versioned release](https://github.com/brant92good/port-forward-tui/releases/tag/v0.10.0-beta.1)
-and actual-download checks are available; the source-candidate notice above
-does not claim that those gates have passed.
+These commands install the published **0.10.0-beta.1 SOCKS prerelease**.
+They do not install audio. See [audio source setup](docs/audio.md) for that preview.
 
 Windows PowerShell 5.1 or 7:
 
@@ -100,6 +97,28 @@ Choose a machine after installation: **A** adds an SSH name or `user@address`;
 Want a remote tab, Ports, local sessions, and return shortcuts together?
 [Terminal Workspace](https://github.com/brant92good/terminal-workspace) adds that
 Windows integration. Ports also runs independently in your current terminal.
+
+## Keep the microphone on your desk. Run the voice app on your server.
+
+A remote shell carries your keystrokes. The **optional audio preview** also sends
+your Windows microphone to Linux and brings the program's audio back to your
+Windows output device. It uses your saved SSH connection.
+
+That opens up remote voice workflows: a coding assistant beside your dev server,
+a speech tool on a GPU machine, or an audio-enabled terminal app. Ports still
+handles everyday dev servers, notebooks and dashboards without audio installed.
+
+In the preview, the main screen shows **Audio: OFF [V]** for a configured machine.
+Press **V** for its controls, **Enter** to start, and **S** in the audio panel to
+stop. Opening Ports or reconnecting a port forward never turns on the microphone.
+
+**Available as Windows-to-Linux preview source, separate from the downloads above.**
+It needs FFmpeg/FFplay and an already prepared compatible Linux audio bridge;
+the Linux endpoint is not distributed here yet. Microphone transport, generated
+reply playback and stop/restoration were checked on Windows and Linux. A specific
+coding agent's voice mode has not been qualified.
+
+[Preview setup and what was tested](https://github.com/brant92good/port-forward-tui/blob/feat/audio-beta/docs/audio.md).
 
 ## First connection
 

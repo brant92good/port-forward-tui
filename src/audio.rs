@@ -189,6 +189,24 @@ pub fn execute(machine: &Machine, root: &Path, action: &Action) -> Result<Value>
         }
     }
 }
+/// Read-only view status. Never starts capture or contacts the remote host.
+pub fn indicator(machine: &Machine) -> String {
+    match status(machine) {
+        Err(_) => "Audio: check status [V]".into(),
+        Ok(value) => {
+            let label = if value["running"] == true {
+                value["last"]["phase"].as_str().unwrap_or("starting")
+            } else if value["configuration_error"].is_string() {
+                "configuration error"
+            } else if value["enabled"] == true {
+                "off"
+            } else {
+                "not configured"
+            };
+            format!("Audio: {} [V]", label.to_ascii_uppercase())
+        }
+    }
+}
 pub fn status(machine: &Machine) -> Result<Value> {
     let config = load(machine);
     let live = running(machine)?;

@@ -393,12 +393,13 @@ pub struct Presentation<'a> {
     pub automatic_errors: &'a BTreeMap<(PathBuf, String), String>,
 }
 pub fn render(frame: &mut ratatui::Frame, view: &Presentation<'_>) {
-    render_named(frame, view, None);
+    render_named(frame, view, None, "Audio: V controls");
 }
 fn render_named(
     frame: &mut ratatui::Frame,
     view: &Presentation<'_>,
     names: Option<&crate::service_name::Inspector>,
+    audio: &str,
 ) {
     let Presentation {
         rows,
@@ -431,7 +432,7 @@ fn render_named(
     };
     frame.render_widget(
         Paragraph::new(format!("{active}  ·  {mode}")).block(screen::panel(&format!(
-            " PORTS {} · {} ",
+            " PORTS {} · {} · {audio} ",
             crate::channel::CHANNEL.to_ascii_uppercase(),
             env!("CARGO_PKG_VERSION")
         ))),
@@ -667,6 +668,9 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     let mut automatic_errors = BTreeMap::new();
     let mut closing = false;
     let mut next_poll = Instant::now();
+    let mut audio_next = Instant::now();
+    let mut audio_machine = String::new();
+    let mut audio_label = String::new();
     let mut generation = 0_u64;
     let mut names = crate::service_name::Inspector::default();
     loop {
@@ -828,6 +832,15 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
             }
             registered_machine = entry.machine.id.clone();
         }
+        let audio_id = rows.get(selected).map_or("", |e| e.machine.id.as_str());
+        if audio_id != audio_machine || Instant::now() >= audio_next {
+            audio_label = rows.get(selected).map_or_else(
+                || "Audio: choose a machine".into(),
+                |entry| crate::audio::indicator(&entry.machine),
+            );
+            audio_machine = audio_id.to_owned();
+            audio_next = Instant::now() + Duration::from_millis(500);
+        }
         session.terminal.draw(|frame| {
             render_named(
                 frame,
@@ -843,6 +856,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     automatic_errors: &automatic_errors,
                 },
                 Some(&names),
+                &audio_label,
             );
             names.draw(frame);
         })?;
@@ -992,7 +1006,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     }
                 }
             }
-            KeyCode::Char('v') => {
+            KeyCode::Char('v' | 'V') => {
                 if let Some(entry) = &entry
                     && let Err(error) = crate::audio::panel::show(
                         &mut session.terminal,
