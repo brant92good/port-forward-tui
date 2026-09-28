@@ -28,7 +28,11 @@ mod platform;
 #[path = "process/windows_daemon.rs"]
 mod windows_daemon;
 #[cfg(windows)]
+pub(crate) use platform::{Group as AudioGroup, configure_ssh as configure_audio_child};
+#[cfg(windows)]
 pub use windows_daemon::DaemonChild;
+#[cfg(windows)]
+pub(crate) use windows_daemon::detached_args as spawn_audio_worker;
 #[cfg(unix)]
 pub type DaemonChild = Child;
 pub type HiddenChild = DaemonChild;

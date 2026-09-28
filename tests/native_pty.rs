@@ -205,6 +205,26 @@ impl Session {
 }
 
 #[test]
+fn optional_audio_panel_is_disabled_and_does_not_start_capture() {
+    let temp = tempfile::tempdir().unwrap();
+    let catalog = Catalog::new(temp.path()).unwrap();
+    let machine = catalog
+        .add("audio-fixture.invalid", "Audio fixture", None, None)
+        .unwrap();
+    let mut view = Session::with_mode(temp.path(), &machine.id, true);
+    view.expect("Saved connections");
+    view.send("v");
+    view.expect("Audio is disabled by default");
+    view.send("\r");
+    view.expect("Audio is disabled by default");
+    assert!(!machine.directory.join("audio-state.json").exists());
+    assert!(!machine.directory.join("audio-worker.log").exists());
+    view.send("\x1b");
+    view.expect("Saved connections");
+    view.close();
+}
+
+#[test]
 fn foreground_quick_entry_resolves_saved_mapping_before_next_screen_poll() {
     let temp = tempfile::tempdir().unwrap();
     let catalog = Catalog::new(temp.path()).unwrap();

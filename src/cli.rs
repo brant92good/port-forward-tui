@@ -46,6 +46,11 @@ pub struct Options {
 }
 #[derive(Debug, Subcommand)]
 pub enum Action {
+    /// Optional Windows microphone and reply audio over the selected SSH route.
+    Audio {
+        #[command(subcommand)]
+        action: crate::audio::Action,
+    },
     /// Copy saved stable machines into a new beta directory; never imports live state or auto-open intent.
     ImportStable {
         #[arg(long)]
@@ -221,6 +226,7 @@ pub fn execute(options: &Options) -> Result<Value> {
     let catalog = Catalog::new(&options.data_dir)?;
     let action = options.command.as_ref().context("Missing command")?;
     let mut command_name = match action {
+        Action::Audio { .. } => "audio",
         Action::ImportStable { .. } => "import-stable",
         Action::Machines { .. } => "machines",
         Action::Doctor => "doctor",
@@ -281,6 +287,10 @@ pub fn execute(options: &Options) -> Result<Value> {
                 json!({"machine":machine})
             }
         }
+    } else if let Action::Audio { action } = action {
+        let machine = selected_machine(&catalog, options.machine.as_deref())?
+            .context("Choose an audio machine with --machine; run machines list")?;
+        crate::audio::execute(&machine, &options.data_dir, action)?
     } else if matches!(action, Action::Doctor) {
         doctor(&catalog)
     } else {
@@ -458,6 +468,31 @@ pub fn print(result: &Value, as_json: bool) {
     }
     if let Some(error) = result.get("error") {
         eprintln!("{}", error["message"].as_str().unwrap_or("Command failed"));
+        return;
+    }
+    if result["command"] == "audio" {
+        println!(
+            "Audio: {} (enabled: {})",
+            if result["running"] == true {
+                "running"
+            } else {
+                "off"
+            },
+            result["enabled"]
+        );
+        println!(
+            "State: {} | Microphone: {}",
+            result["last"]["phase"], result["microphone"]
+        );
+        if let Some(text) = result["last"]["restoration"].as_str() {
+            println!("Remote audio restoration: {text}");
+        }
+        if let Some(text) = result["last"]["error"].as_str() {
+            println!("Last error: {text}");
+        }
+        if let Some(text) = result["configuration_error"].as_str() {
+            println!("Configuration error: {text}");
+        }
         return;
     }
     if let Some(checks) = result["checks"].as_array() {

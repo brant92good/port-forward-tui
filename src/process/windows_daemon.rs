@@ -189,6 +189,22 @@ pub(super) fn hidden(executable: &Path, args: &[OsString]) -> Result<DaemonChild
     )
 }
 
+pub(crate) fn detached_args(
+    executable: &Path,
+    args: &[OsString],
+    log: File,
+) -> Result<DaemonChild> {
+    create(
+        executable,
+        &args.iter().map(OsString::as_os_str).collect::<Vec<_>>(),
+        log,
+        // Audio does not need to escape the caller's security/lifetime job.
+        // Restrictive terminal/agent hosts can end it; the ordinary port daemon
+        // retains its separate, explicit persistent breakaway contract above.
+        DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+    )
+}
+
 fn create(executable: &Path, args: &[&OsStr], log: File, flags: u32) -> Result<DaemonChild> {
     ensure!(
         executable.is_absolute(),

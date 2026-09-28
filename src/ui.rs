@@ -492,7 +492,7 @@ fn render_named(
             automatic_errors.len()
         )
     };
-    frame.render_widget(Paragraph::new(format!("Enter on/off · N quick · A add · P proxy · E edit · D delete · B/T use · H hosts · F2 settings · ? help · Q close\n{automatic_summary}{}{}",if busy{"Working… "}else{""},notice)).wrap(Wrap{trim:false}).style(Style::default().fg(ACCENT)),areas[4]);
+    frame.render_widget(Paragraph::new(format!("Enter on/off · N quick · A add · P proxy · E edit · D delete · H hosts · V audio · F2 settings · ? help · Q close\n{automatic_summary}{}{}",if busy{"Working… "}else{""},notice)).wrap(Wrap{trim:false}).style(Style::default().fg(ACCENT)),areas[4]);
 }
 fn browser_url(rule: &Forward) -> Result<String> {
     anyhow::ensure!(
@@ -992,6 +992,17 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
                     }
                 }
             }
+            KeyCode::Char('v') => {
+                if let Some(entry) = &entry
+                    && let Err(error) = crate::audio::panel::show(
+                        &mut session.terminal,
+                        &entry.machine,
+                        &catalog.directory,
+                    )
+                {
+                    notice = format!("{error:#}");
+                }
+            }
             KeyCode::Char('b') => {
                 if let Some(rule) = entry.as_ref().and_then(|e| e.rule.as_ref()) {
                     if rule.is_socks() {
@@ -1193,7 +1204,7 @@ pub fn run(catalog: Catalog, machine: Machine, foreground: bool) -> Result<()> {
     }
     Ok(())
 }
-const HELP: &str = "Ports BETA: isolated saved SSH connections.\nUp/Down select · Enter/Space start/stop · R reconnect\nN / digits quick fixed forward: 8000 or 18000:8000 API\nA add fixed forward · P add SOCKS5 proxy (default 1080)\nE edits the selected kind's ports/name + Open automatically\nD delete · S stop every listed server · H machines\nF2 settings · Q / Ctrl+Q close · ? help\n\nFixed forward: B opens HTTP; T previews title; U labels this view.\nSOCKS5: B / T shows client setup; neither sends HTTP nor opens a browser.\nSOCKS needs proxy-aware clients; OS/browser settings are unchanged.\n\nAuto opening defaults off; only a new view applies opted-in favorites.\nEnter cancels QUEUED; Q/S cancel unsent work. Stop cancels retries.\nRetries reach 30s; auth, host-key and occupied-port errors need attention.\nBackground survives terminal close; sign-out/reboot ends it.\n--foreground stops owned connections when closed.\nON confirms the local SSH listener, not every destination.\nBeta protocol 2 does not share stable controllers.";
+const HELP: &str = "Ports BETA: isolated saved SSH connections.\nUp/Down select · Enter/Space start/stop · R reconnect\nN / digits quick fixed forward: 8000 or 18000:8000 API\nA add fixed forward · P add SOCKS5 proxy (default 1080)\nE edits the selected kind's ports/name + Open automatically\nD delete · S stop every listed server · H machines\nV audio (optional Windows preview) · F2 settings · Q / Ctrl+Q close · ? help\n\nFixed forward: B opens HTTP; T previews title; U labels this view.\nSOCKS5: B / T shows client setup; neither sends HTTP nor opens a browser.\nSOCKS needs proxy-aware clients; OS/browser settings are unchanged.\n\nAuto opening defaults off; only a new view applies opted-in favorites.\nEnter cancels QUEUED; Q/S cancel unsent work. Stop cancels retries.\nRetries reach 30s; auth, host-key and occupied-port errors need attention.\nBackground survives terminal close; sign-out/reboot ends it.\n--foreground stops owned connections when closed.\nON confirms the local SSH listener, not every destination.\nBeta protocol 2 does not share stable controllers.";
 
 #[cfg(test)]
 mod socks_tests {

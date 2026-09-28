@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod auto_open;
 pub mod background;
 pub mod channel;

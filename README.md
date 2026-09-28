@@ -2,6 +2,11 @@
 
 # Ports BETA
 
+> **Audio preview source: 0.10.0-beta.2.** Optional Windows microphone/reply
+> forwarding is disabled by default. Press **V** to inspect its audio panel;
+> [setup and limitations](docs/audio.md). This preview is not yet a published
+> cross-platform release. The existing versioned downloads below are unchanged.
+
 **Save SSH forwards and SOCKS5 proxies, control them from any tab, and leave them running.**
 
 Keep dev servers, notebooks, and dashboards from several machines in one
