@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 # The ordinary install never calls this. No opt-in means no dependency lookup,
 # no settings write, no SSH, and no microphone access.
 if (-not $EnableAudio) {
-    Write-Output 'Audio forwarding is disabled. Add -EnableAudio to configure this optional Windows feature.'
+    Write-Output 'Experimental audio forwarding is disabled. Add -EnableAudio to configure this optional Windows feature.'
     return
 }
 foreach ($required in @('Ports','Machine','Microphone','RemoteScript','ExpectedHost')) {
@@ -26,4 +26,4 @@ if ($DataDir) { $audioArgs += @('--data-dir',$DataDir) }
 $audioArgs += @('audio','configure','--microphone',$Microphone,'--remote-script',$RemoteScript,'--expected-host',$ExpectedHost,'--ffmpeg',$FFmpeg,'--ffplay',$FFplay,'--json')
 & $Ports @audioArgs
 if ($LASTEXITCODE -ne 0) { throw 'Ports audio configuration failed.' }
-Write-Output 'Audio configured; microphone is OFF. In Ports press V, then Enter to start; S stops.'
+Write-Output 'Experimental audio configured; microphone is OFF. In Ports press V, then Enter to start; S stops.'

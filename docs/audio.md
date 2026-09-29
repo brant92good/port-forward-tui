@@ -1,4 +1,4 @@
-# Audio forwarding (Windows-to-Linux preview)
+# Experimental voice forwarding (Windows to Linux)
 
 Keep your microphone on your desk while a voice-capable program runs in an
 existing Linux SSH session. Forward microphone input over SSH and play its reply
@@ -14,33 +14,32 @@ the audio panel or `ports audio stop` and check restoration before closing.
 
 ## Availability
 
-Audio is on the `feat/audio-beta` source branch (0.10.0-beta.3), not in the
-published 0.9.1 download or the Workspace 0.10.0 bundle. Normal Ports installation
-still downloads a compiled app; trying this audio source currently needs Git
-and a Rust toolchain:
+The compiled **0.10.0-beta.4 Windows prerelease** includes the experimental client.
+It is not in stable 0.9.1 or the default Workspace 0.10.0 bundle. Install the beta
+without changing the stable command or data:
 
 ```powershell
-git clone --branch feat/audio-beta https://github.com/brant92good/port-forward-tui.git ports-audio
-cd ports-audio
-cargo build --locked --release
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_native.ps1 -SkipRust -OutputDirectory target/release
-$Ports = (Resolve-Path .\target\release\ports.exe).Path
+$installer = Join-Path $env:TEMP 'ports-beta-0.10.0-beta.4-install.ps1'
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.10.0-beta.4/install.ps1 -OutFile $installer
+powershell -NoProfile -ExecutionPolicy Bypass -File $installer -Channel beta -Version 0.10.0-beta.4
+$Ports = Join-Path $env:LOCALAPPDATA 'Programs\PortsBeta\bin\ports-beta.exe'
 & $Ports
 ```
 
-The Windows helper build above is needed for returning to existing Terminal tabs.
-Add or import an SSH machine in this isolated preview before configuring audio.
-Its separate beta data directory keeps the existing Ports installation intact.
+No Python, Cargo or Git is needed. Add or import an SSH machine in the beta before
+configuring audio. Its separate data directory keeps the stable installation intact.
 If an old instance owns a local port, stop that old forward before starting its
-preview counterpart; only one installation should auto-open that mapping.
+beta counterpart; only one installation should auto-open that mapping.
 
 **The compatible Linux bridge must already be prepared.** This repository does
-not yet distribute that endpoint or a complete voice installer. A versioned
-optional audio package remains release work.
+not distribute that endpoint or a complete remote voice setup. This experimental
+release packages the Windows client; it does not install a server or qualify any
+particular coding agent's voice mode. Linux/macOS Ports still supports ordinary
+forwards and proxies; microphone capture is not implemented on those clients.
 
 ## Enable on Windows
 
-This preview needs system OpenSSH, FFmpeg with DirectShow, FFplay, and the
+This experimental feature needs system OpenSSH, FFmpeg with DirectShow, FFplay, and the
 compatible user-session Linux `ssh-voice-bridge` endpoint already prepared.
 FFmpeg is an external optional dependency; the Ports controller is compiled Rust.
 No Windows Python or Rust toolchain is required to run the compiled app.
@@ -59,14 +58,16 @@ not a virtual loopback device. Configure explicit paths and a saved machine:
 $Machine = 'workbox'
 # Use the exact output of `ssh workbox hostname`, not the SSH alias:
 $ExpectedHost = 'linux-workstation'
-.\install-audio.ps1 -EnableAudio -Ports $Ports `
-  -Machine $Machine -Microphone 'Microphone (USB Audio)' `
-  -RemoteScript /home/dev/ssh-voice-bridge/bridge.py -ExpectedHost $ExpectedHost
+$FFmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
+$FFplay = (Get-Command ffplay.exe -ErrorAction Stop).Source
+& $Ports --machine $Machine audio configure `
+  --microphone 'Microphone (USB Audio)' `
+  --remote-script /home/dev/ssh-voice-bridge/bridge.py --expected-host $ExpectedHost `
+  --ffmpeg $FFmpeg --ffplay $FFplay --json
 ```
 
-Without `-EnableAudio` this installer is a no-op. It reuses FFmpeg/FFplay already
-on PATH (or accepts `-FFmpeg` / `-FFplay` paths); it does not silently download a
-media package or deploy a remote server. Select headphones as Windows' default
+Configuration does not open the microphone. FFmpeg/FFplay are optional external
+dependencies; install them separately. Select headphones as Windows' default
 playback device before starting.
 
 ```powershell
@@ -75,6 +76,22 @@ playback device before starting.
 & $Ports --machine $Machine audio stop
 & $Ports --machine $Machine audio disable
 ```
+
+Prefer the helper script? [install-audio.ps1](../install-audio.ps1) is a separate,
+optional source download, not a file in the binary ZIP. Download the exact release
+version; without `-EnableAudio` it does nothing:
+
+```powershell
+$audioSetup = Join-Path $env:TEMP 'ports-audio-0.10.0-beta.4.ps1'
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.10.0-beta.4/install-audio.ps1 -OutFile $audioSetup
+powershell -NoProfile -ExecutionPolicy Bypass -File $audioSetup -EnableAudio -Ports $Ports -Machine $Machine `
+  -Microphone 'Microphone (USB Audio)' `
+  -RemoteScript /home/dev/ssh-voice-bridge/bridge.py -ExpectedHost $ExpectedHost `
+  -FFmpeg $FFmpeg -FFplay $FFplay
+```
+
+It reuses the specified dependencies, writes the same device-local configuration,
+and never downloads a media package, deploys a remote server or starts capture.
 
 For a separately installed preview, substitute its full executable path and
 `--data-dir` where appropriate. Configuration is device-local, per machine.

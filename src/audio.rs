@@ -194,6 +194,9 @@ pub fn indicator(machine: &Machine) -> String {
     match status(machine) {
         Err(_) => "Audio: check status [V]".into(),
         Ok(value) => {
+            if value["supported"] != true {
+                return "Audio: WINDOWS ONLY [V]".into();
+            }
             let label = if value["running"] == true {
                 value["last"]["phase"].as_str().unwrap_or("starting")
             } else if value["configuration_error"].is_string() {
@@ -225,7 +228,7 @@ pub fn status(machine: &Machine) -> Result<Value> {
             json!("unconfirmed: worker exited; Start checks the remote state again");
     }
     Ok(
-        json!({"supported":cfg!(windows), "enabled":config.as_ref().ok().and_then(|c|c.as_ref()).is_some_and(|c|c.enabled), "running":live, "microphone":config.as_ref().ok().and_then(|c|c.as_ref()).map(|c|&c.microphone), "playback":"Windows default output", "last":last, "configuration_error":config.err().map(|e|e.to_string()), "automatic_start":false, "automatic_reconnect":false}),
+        json!({"experimental":true, "supported":cfg!(windows), "enabled":config.as_ref().ok().and_then(|c|c.as_ref()).is_some_and(|c|c.enabled), "running":live, "microphone":config.as_ref().ok().and_then(|c|c.as_ref()).map(|c|&c.microphone), "playback":"Windows default output", "last":last, "configuration_error":config.err().map(|e|e.to_string()), "automatic_start":false, "automatic_reconnect":false}),
     )
 }
 pub fn running(machine: &Machine) -> Result<bool> {

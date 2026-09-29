@@ -2,10 +2,9 @@
 
 # Ports BETA
 
-> **Audio preview source: 0.10.0-beta.3.** Optional Windows microphone/reply
-> forwarding is disabled by default. Press **V** to inspect its audio panel;
-> [setup and limitations](docs/audio.md). This preview is not yet a published
-> cross-platform release. The existing versioned downloads below are unchanged.
+> **0.10.0-beta.4: experimental voice forwarding.** Windows microphone input
+> can travel over SSH while replies play locally. Voice is optional, off by
+> default, and requires a prepared Linux bridge. [Setup and limits](docs/audio.md).
 
 **Save SSH forwards and SOCKS5 proxies, control them from any tab, and leave them running.**
 
@@ -20,37 +19,37 @@ terminal closed.
 
 [Install](#install) · [First connection](#first-connection) · [SOCKS5 guide](docs/socks.md) · [Agent commands](#commands-for-your-agent)
 
-> **Separate channels:** the published **0.10.0-beta.1** download adds SOCKS5
-> with its own command, data and controllers. Audio is **0.10.0-beta.3 source**
-> and is not included in that download. The [published 0.9.1 baseline](https://github.com/brant92good/port-forward-tui/blob/v0.9.1/README.md#install)
-> remains available for fixed forwards. macOS remains beta.
-> [What was tested](docs/verification.md).
+> **Separate channels:** this beta has its own command, data and controllers.
+> The [stable 0.9.1 release](https://github.com/brant92good/port-forward-tui/blob/v0.9.1/README.md#install)
+> remains the default for fixed forwards. macOS remains beta; voice is experimental
+> and Windows-only for capture/playback. [What was tested](docs/verification.md).
 
 ![Ports showing saved connections across servers](docs/screenshots/connections.svg)
 
-*Native widgets rendered with example machines and connection states.*
+*Port/SOCKS screenshots are beta.1 native-widget captures with example machines and states.*
 
 ## Install
 
 ### Try the beta
 
-These commands install the published **0.10.0-beta.1 SOCKS prerelease**.
-They do not install audio. See [audio source setup](docs/audio.md) for that preview.
+These commands install the compiled **0.10.0-beta.4 prerelease**.
+Port forwarding works without audio dependencies. Voice stays off until you
+[configure and explicitly start it](docs/audio.md).
 
 Windows PowerShell 5.1 or 7:
 
 ```powershell
-$installer = Join-Path $env:TEMP 'ports-beta-0.10.0-beta.1-install.ps1'
-Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.10.0-beta.1/install.ps1 -OutFile $installer
-& $installer -Channel beta -Version 0.10.0-beta.1
+$installer = Join-Path $env:TEMP 'ports-beta-0.10.0-beta.4-install.ps1'
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.10.0-beta.4/install.ps1 -OutFile $installer
+powershell -NoProfile -ExecutionPolicy Bypass -File $installer -Channel beta -Version 0.10.0-beta.4
 & "$env:LOCALAPPDATA\Programs\PortsBeta\bin\ports-beta.exe"
 ```
 
 Linux or macOS **beta**:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.10.0-beta.1/install.sh |
-  PORTS_CHANNEL=beta PORTS_VERSION=0.10.0-beta.1 sh
+curl -fsSL https://raw.githubusercontent.com/brant92good/port-forward-tui/v0.10.0-beta.4/install.sh |
+  PORTS_CHANNEL=beta PORTS_VERSION=0.10.0-beta.4 sh
 "${XDG_DATA_HOME:-$HOME/.local/share}/ports-beta-install/bin/ports-beta"
 ```
 
@@ -100,7 +99,7 @@ Windows integration. Ports also runs independently in your current terminal.
 
 ## Keep the microphone on your desk. Run the voice app on your server.
 
-A remote shell carries your keystrokes. The **optional audio preview** also sends
+A remote shell carries your keystrokes. The **experimental voice feature** also sends
 your Windows microphone to Linux and brings the program's audio back to your
 Windows output device. It uses your saved SSH connection.
 
@@ -112,13 +111,13 @@ In the preview, the main screen shows **Audio: OFF [V]** for a configured machin
 Press **V** for its controls, **Enter** to start, and **S** in the audio panel to
 stop. Opening Ports or reconnecting a port forward never turns on the microphone.
 
-**Available as Windows-to-Linux preview source, separate from the downloads above.**
+**Experimental Windows-to-Linux voice forwarding is included in the Windows beta.**
 It needs FFmpeg/FFplay and an already prepared compatible Linux audio bridge;
 the Linux endpoint is not distributed here yet. Microphone transport, generated
 reply playback and stop/restoration were checked on Windows and Linux. A specific
 coding agent's voice mode has not been qualified.
 
-[Preview setup and what was tested](https://github.com/brant92good/port-forward-tui/blob/feat/audio-beta/docs/audio.md).
+[Experimental voice setup and what was tested](docs/audio.md).
 
 ## First connection
 
@@ -168,6 +167,7 @@ directly in the main view.*
 | B / R | Fixed forward: open HTTP; proxy: client setup / reconnect now |
 | T | Fixed forward: preview HTML title; proxy: client setup only |
 | H | Add, import, or select machines |
+| V | Experimental voice controls for the selected machine (Windows) |
 | Q | Close this view; background forwards continue |
 | S | Stop forwards and pending retries on all listed servers |
 | F2 | Settings: open this favorite automatically, or choose return-shortcut scope |

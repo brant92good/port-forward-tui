@@ -46,7 +46,7 @@ pub struct Options {
 }
 #[derive(Debug, Subcommand)]
 pub enum Action {
-    /// Optional Windows microphone and reply audio over the selected SSH route.
+    /// Experimental Windows microphone and reply audio over the selected SSH route.
     Audio {
         #[command(subcommand)]
         action: crate::audio::Action,
@@ -472,7 +472,7 @@ pub fn print(result: &Value, as_json: bool) {
     }
     if result["command"] == "audio" {
         println!(
-            "Audio: {} (enabled: {})",
+            "Experimental audio: {} (enabled: {})",
             if result["running"] == true {
                 "running"
             } else {

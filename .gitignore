@@ -7,6 +7,8 @@ endpoint.json
 forwards.json
 forward-options.json
 ui-settings.json
+audio.json
+audio-state.json
 views/
 window-views/
 machines/

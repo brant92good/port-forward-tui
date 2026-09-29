@@ -87,6 +87,18 @@ def main():
         created = json.loads(run('--data-dir',str(data),'machines','add','demo.invalid','--name','Demo','--json'))
         identifier = created['machine']['id']
         machine = json.loads(run('--data-dir',str(data),'--machine',identifier,'machines','pick','--no-window-context','--json'))['machine']
+        # Exercise the actual installed experimental client, without configuring
+        # devices, opening a microphone or contacting the remote endpoint.
+        base_version = tuple(int(p) for p in options.version.split('-')[0].split('.'))
+        experimental_audio = options.channel == 'beta' and (base_version > (0, 10, 0) or (base_version == (0, 10, 0) and int(options.version.rsplit('.', 1)[1]) >= 4))
+        if experimental_audio:
+            audio = json.loads(run('--data-dir',str(data),'--machine',identifier,'audio','status','--json'))
+            assert audio['experimental'] is True and audio['supported'] == (os.name == 'nt')
+            assert audio['enabled'] is False and audio['running'] is False
+            assert audio['automatic_start'] is False and audio['automatic_reconnect'] is False
+            assert 'Experimental' in run('--help')
+            assert 'Experimental audio' in run('--data-dir',str(data),'--machine',identifier,'audio','status')
+            assert not list(data.rglob('audio*.json')), 'Read-only audio status must not create configuration or capture state'
         store = Path(machine['directory'])/'forwards.json'
         saved = json.loads(store.read_text(encoding='utf-8'))
         saved['forwards'][0]['name'] = 'Keep my saved connection'

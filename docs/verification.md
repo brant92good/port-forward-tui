@@ -1,5 +1,24 @@
 # Native verification
 
+## 0.10.0-beta.4: experimental voice release candidate
+
+Local Windows qualification passed 82 active native tests, with four deliberate
+fixture-specific ignores, plus all-target/all-feature Clippy. Audio tests use
+synthetic child processes and binary samples; hidden ConPTY checks verify the
+experimental panel, disabled/default-off state and V controls without opening a
+microphone. Existing physical transport evidence is scoped in [audio.md](audio.md).
+
+Release identity tests (5), dependency notices, malformed-package rejection and
+22 channel installer fixtures passed locally. The bundle shape is unchanged.
+The actual-bundle/HTTPS installer check also inspects the installed experimental
+status, platform support, disabled recording and absence of audio state writes.
+
+Independent source and README reviews are required before tagging. The tag's
+[release workflow](../.github/workflows/native.yml) must pass all five native
+platform jobs before publishing prerelease assets, then run actual HTTPS installs.
+Those hosted/download observations are separate from these local candidate results.
+Stable0.9.1 remains Latest. No new physical voice-app compatibility is claimed.
+
 ## Unreleased: Windows saves during concurrent reads
 
 This source-only correction passed local Windows tests and independent source

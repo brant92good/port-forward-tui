@@ -215,16 +215,29 @@ fn optional_audio_panel_is_disabled_and_does_not_start_capture() {
         .unwrap();
     let mut view = Session::with_mode(temp.path(), &machine.id, true);
     view.expect("Saved connections");
-    view.expect("Audio: NOT CONFIGURED [V]");
+    view.expect(if cfg!(windows) {
+        "Audio: NOT CONFIGURED [V]"
+    } else {
+        "Audio: WINDOWS ONLY [V]"
+    });
     view.send("V");
-    view.expect("Audio is disabled by default");
+    view.expect("Experimental");
+    let unavailable = if cfg!(windows) {
+        "Audio is disabled by default"
+    } else {
+        "microphone capture is unavailable"
+    };
+    view.expect(unavailable);
     view.send("\r");
-    view.expect("Audio is disabled by default");
+    view.expect(unavailable);
     assert!(!machine.directory.join("audio-state.json").exists());
     assert!(!machine.directory.join("audio-worker.log").exists());
     view.send("\x1b");
     view.expect("Saved connections");
     view.close();
+    if !cfg!(windows) {
+        return;
+    }
     let executable = std::env::current_exe().unwrap();
     std::fs::write(
         machine.directory.join("audio.json"),

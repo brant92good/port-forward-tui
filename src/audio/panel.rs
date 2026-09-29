@@ -47,10 +47,14 @@ pub fn show(terminal: &mut screen::Screen, machine: &Machine, root: &Path) -> Re
         terminal.draw(|frame| {
             let area = screen::centered(frame.area(), 86, 22);
             frame.render_widget(Clear, area);
-            frame.render_widget(screen::panel(" Audio forwarding · Windows preview "), area);
+            frame.render_widget(screen::panel(" Audio forwarding · Experimental "), area);
             let phase = if current["running"] == true { current["last"]["phase"].as_str().unwrap_or("starting") } else { "OFF" };
-            let setup = if current["enabled"] == true { "Enter starts microphone + reply playback. S stops.\nUse Stop before closing; a terminal host may end background audio." } else { "Audio is disabled by default. Run install-audio.ps1 -EnableAudio\nor ports audio configure --help to select your microphone and bridge." };
-            let body = format!("{}\n\nState: {phase}\nMicrophone: {}\nPlayback: Windows default output (use headphones)\n\n{setup}\nNo automatic recording or reconnect. No audio files are saved.\n\nRestoration: {}\n{}\n\n{}\n\nEnter start · S stop · Esc back", machine.name,
+            let setup = if current["supported"] != true { "Experimental audio needs a Windows client and a prepared Linux bridge.\nOn this platform microphone capture is unavailable." }
+                else if current["enabled"] == true { "Enter starts microphone + reply playback. S stops.\nUse Stop before closing; a terminal host may end background audio." }
+                else { "Audio is disabled by default. Run ports-beta audio configure --help\nto select your microphone and prepared Linux bridge." };
+            let playback = if current["supported"] == true { "Windows default output (use headphones)" } else { "unavailable on this client" };
+            let controls = if current["supported"] == true { "Enter start · S stop · Esc back" } else { "Esc back" };
+            let body = format!("{}\n\nState: {phase}\nMicrophone: {}\nPlayback: {playback}\n\n{setup}\nNo automatic recording or reconnect. No audio files are saved.\n\nRestoration: {}\n{}\n\n{}\n\n{controls}", machine.name,
                 current["microphone"].as_str().unwrap_or("not configured"),
                 current["last"]["restoration"].as_str().unwrap_or("not needed"),
                 current["configuration_error"].as_str().or(current["last"]["error"].as_str()).unwrap_or(""),
@@ -65,7 +69,9 @@ pub fn show(terminal: &mut screen::Screen, machine: &Machine, root: &Path) -> Re
             return Ok(());
         }
         match key.code {
-            KeyCode::Enter if !working && current["enabled"] == true => {
+            KeyCode::Enter
+                if !working && current["supported"] == true && current["enabled"] == true =>
+            {
                 working = true;
                 cancel_start.store(false, Ordering::Relaxed);
                 let cancel = cancel_start.clone();
@@ -79,7 +85,7 @@ pub fn show(terminal: &mut screen::Screen, machine: &Machine, root: &Path) -> Re
                     let text = start(&machine, &root)
                         .map(|v| {
                             if v["last"]["phase"] == "streaming" {
-                                "Transport ready. Open /voice in the existing remote session."
+                                "Transport ready. Select the forwarded audio in your remote app."
                                     .to_string()
                             } else {
                                 format!(

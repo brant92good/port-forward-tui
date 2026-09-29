@@ -413,7 +413,7 @@ pub fn run(machine: &Machine, token: &str) -> Result<()> {
                 {
                     state["phase"] = json!("streaming");
                     state["notice"] = json!(
-                        "Transport ready; physical microphone/headphones and /voice still require user verification"
+                        "Transport ready; physical microphone/headphones and the remote application still require user verification"
                     );
                     write_state(machine, &state)?;
                 } else {
