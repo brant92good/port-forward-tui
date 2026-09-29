@@ -54,7 +54,7 @@ Windows integration. Ports also runs independently in your current terminal.
 
 ## Keep the microphone on your desk. Run the voice app on your server.
 
-A remote shell carries your keystrokes. The **optional audio preview** also sends
+A remote shell carries your keystrokes. The **experimental voice feature** also sends
 your Windows microphone to Linux and brings the program's audio back to your
 Windows output device. It uses your saved SSH connection.
 
@@ -66,13 +66,15 @@ In the preview, the main screen shows **Audio: OFF [V]** for a configured machin
 Press **V** for its controls, **Enter** to start, and **S** in the audio panel to
 stop. Opening Ports or reconnecting a port forward never turns on the microphone.
 
-**Available as Windows-to-Linux preview source, separate from the downloads above.**
+**Available in the compiled [0.10.0-beta.4 prerelease](https://github.com/brant92good/port-forward-tui/releases/tag/v0.10.0-beta.4), separate from stable above.**
+Voice is experimental, Windows-to-Linux only, and disabled by default.
 It needs FFmpeg/FFplay and an already prepared compatible Linux audio bridge;
 the Linux endpoint is not distributed here yet. Microphone transport, generated
 reply playback and stop/restoration were checked on Windows and Linux. A specific
 coding agent's voice mode has not been qualified.
 
-[Preview setup and what was tested](https://github.com/brant92good/port-forward-tui/blob/feat/audio-beta/docs/audio.md).
+[Install the beta and configure experimental voice](https://github.com/brant92good/port-forward-tui/blob/v0.10.0-beta.4/docs/audio.md).
+The beta uses its own executable and data; stable installs remain on 0.9.1.
 
 ## First connection
 
